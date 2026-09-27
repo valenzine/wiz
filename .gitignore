@@ -54,3 +54,6 @@ htmlcov/
 docs/ARCHITECTURE.gitnexus.md
 .agents/skills/
 # --- end bearing ---
+
+# Shared local working context for agents (Claude, Codex): notes, eval data. Never committed.
+/tmp/
