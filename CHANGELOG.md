@@ -13,12 +13,11 @@ All notable changes to this project are documented here. The format is based on
   3:50 instead of 7:46, and the share of words given to the wrong speaker was
   2.83% instead of 2.99% (0.25 was faster still, but less accurate at 3.17%).
   To get the old behaviour, run `wiz config set diarization_window_shift=0.1`.
-- Diarization now needs sherpa-onnx 1.13.6 or newer. With an older one, wiz skips
-  speaker labels (or stops, when you asked for them) and says how to upgrade:
+- Diarization now needs sherpa-onnx 1.13.6 or newer. An older one is treated like
+  a missing one: speaker labels are skipped with a warning that says how to upgrade:
   `pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6'`. The install hints
   and `wiz upgrade` now pass `--force`, since without it pipx leaves an older
-  sherpa-onnx in place. (`wiz upgrade` runs the installed version's code, so this
-  applies from the upgrade after this one.)
+  sherpa-onnx in place.
 - Diarization caches written with the old default are recomputed once.
 
 ## [0.16.0] - 2026-09-27
