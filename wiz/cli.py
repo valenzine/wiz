@@ -2519,7 +2519,9 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
     if had_diarize:
         ui.phase("refreshing the diarize extra")
-        rc = _run_live(["pipx", "inject", D.PIPX_PACKAGE, D.DIARIZE_REQUIREMENT])
+        # --force: `pipx install --force` keeps the existing venv, and pipx inject skips a
+        # package that is already there, so without it an old sherpa-onnx would stay.
+        rc = _run_live(["pipx", "inject", "--force", D.PIPX_PACKAGE, D.DIARIZE_REQUIREMENT])
         if rc != 0:
             ui.status(
                 f"pipx inject of {D.DIARIZE_REQUIREMENT} failed (exit {rc}). Speaker detection may be "

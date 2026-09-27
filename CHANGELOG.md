@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format is based on
 - Diarization now needs sherpa-onnx 1.13.6 or newer. With an older one, wiz skips
   speaker labels (or stops, when you asked for them) and says how to upgrade:
   `pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6'`. The install hints
-  now pass `--force` too, since without it pipx leaves an older sherpa-onnx in place.
+  and `wiz upgrade` now pass `--force`, since without it pipx leaves an older
+  sherpa-onnx in place. (`wiz upgrade` runs the installed version's code, so this
+  applies from the upgrade after this one.)
 - Diarization caches written with the old default are recomputed once.
 
 ## [0.16.0] - 2026-09-27

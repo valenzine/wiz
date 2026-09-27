@@ -2494,4 +2494,4 @@ def test_upgrade_reinjects_the_diarize_requirement_into_the_pipx_package(monkeyp
     monkeypatch.setattr(cli, "_run_live", lambda cmd: calls.append(cmd) or 0)
     assert cli.cmd_upgrade(argparse.Namespace()) == 0
     assert calls[0] == ["pipx", "install", "--force", cli._INSTALL_SOURCE]
-    assert calls[1] == ["pipx", "inject", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
+    assert calls[1] == ["pipx", "inject", "--force", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
