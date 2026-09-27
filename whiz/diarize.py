@@ -13,6 +13,7 @@ import json
 import shutil
 import sys
 import tarfile
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,7 @@ from whiz import config as cfg
 _DIAR_CACHE_VERSION = 2
 
 class DiarizationUnavailable(RuntimeError):
-    """Diarization cannot run: missing package, models, or invalid config.
+    """Diarization cannot run: missing package/models or invalid model config.
 
     Setup problems that callers DEGRADE on (skip speakers / generic labels
     with a hint), not crash on. Distinct from RuntimeError because callers
@@ -31,6 +32,10 @@ class DiarizationUnavailable(RuntimeError):
     validate-failure path entirely (M2). Transient/runtime failures keep
     raising plain RuntimeError and stay loud.
     """
+
+
+class DiarizationProviderError(RuntimeError):
+    """An explicitly requested sherpa-onnx execution provider failed."""
 
 # GitHub release asset URLs.
 SEG_URL = (
@@ -160,7 +165,7 @@ def download_diarization_models(dest_dir: Path | None = None) -> tuple[Path, Pat
 
 
 def diar_cache_path(wav: Path) -> Path:
-    """Path of the diarization cache file for a given WAV."""
+    """Path of the diarization cache file for an inference WAV or source file."""
     # Append (not with_suffix) so dots in stems like "...16.03.40" survive.
     return Path(str(wav) + ".diar.json")
 
@@ -171,11 +176,13 @@ def load_diarization_cache(
     threshold: float = 0.5,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
+    window_shift_ratio: float = 0.1,
 ) -> list[DiarSegment] | None:
     """Load a cached diarization result if params AND inputs match.
 
     Returns the cached segments when the cache exists and was produced with
-    the same num_speakers/threshold AND the same WAV bytes and model files;
+    the same num_speakers/threshold/window_shift_ratio AND the same source
+    file and model files;
     otherwise returns None. The expensive part of diarization is embedding
     extraction, so reusing a matching cache skips the ~3 minute embedding
     pass and only needs the cheap merge step.
@@ -185,7 +192,7 @@ def load_diarization_cache(
     the same filename and the cache silently served STALE speaker labels
     for different audio, which then poisoned stored voice profiles via
     compute_speaker_embeddings + save_profile. The payload now records
-    the WAV's size+mtime and the resolved model paths; a mismatch is a
+    the source's size+mtime and the resolved model paths; a mismatch is a
     cache MISS (recompute) — never a silent stale hit.
     """
     path = diar_cache_path(wav)
@@ -203,7 +210,12 @@ def load_diarization_cache(
     cached_thr = data.get("threshold")
     if cached_thr is None or abs(float(cached_thr) - threshold) > 1e-9:
         return None
-    # Input identity (H1): the WAV bytes (size + mtime) and both resolved
+    # The window shift changes segmentation output. Caches written before it
+    # was recorded lack the field and are a miss (one-time recompute).
+    cached_shift = data.get("window_shift_ratio")
+    if cached_shift is None or abs(float(cached_shift) - window_shift_ratio) > 1e-9:
+        return None
+    # Input identity (H1): the cache source (size + mtime) and both resolved
     # model paths must match what produced the cache. ``None`` model args
     # mean the caller could not resolve models — never trust a cache that
     # cannot be verified.
@@ -235,10 +247,11 @@ def _write_diarization_cache(
     threshold: float,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
+    window_shift_ratio: float = 0.1,
 ) -> Path:
     """Persist the diarization result so later `whiz merge` runs can reuse it.
 
-    Records the input identity (H1) — WAV size+mtime and the resolved model
+    Records the input identity (H1) — source size+mtime and the resolved model
     paths — alongside the params so a later load can tell a matching cache
     from a stale one.
     """
@@ -254,6 +267,7 @@ def _write_diarization_cache(
         "version": _DIAR_CACHE_VERSION,
         "num_speakers": num_speakers,
         "threshold": threshold,
+        "window_shift_ratio": window_shift_ratio,
         "wav_size": wav_size,
         "wav_mtime": wav_mtime,
         "seg_model": str(seg_model) if seg_model else None,
@@ -273,6 +287,7 @@ def run_diarization(
     threshold: float = 0.5,
     dry_run: bool = False,
     use_cache: bool = True,
+    cache_source: Path | None = None,
 ) -> list[DiarSegment]:
     """Run sherpa-onnx diarization on a 16kHz mono WAV.
 
@@ -280,10 +295,17 @@ def run_diarization(
     and prints what would run.
 
     When ``use_cache`` is True (the default) and a matching cache exists
-    for this WAV + (num_speakers, threshold) + resolved model files, the
-    embedding pass is skipped and the cached segments are returned. A
+    for the cache source + (num_speakers, threshold, window shift) + resolved
+    model files,
+    the embedding pass is skipped and the cached segments are returned. A
     fresh result is always written back to the cache after a real run.
+
+    ``cache_source`` may identify a stable original media file when ``wav``
+    is a temporary normalized inference file.  It defaults to ``wav`` to
+    retain the established behavior for direct WAV callers.
     """
+    cfg.validate_diarization_execution_settings(config)
+
     # Resolve the models BEFORE the cache check (H1): the cache key now
     # includes the resolved model paths, and dry_run needs them anyway.
     seg_model = find_segmentation_model(config)
@@ -293,17 +315,20 @@ def run_diarization(
             "Diarization models not found. Run `whiz models download-diarization` first."
         )
 
+    cache_input = cache_source or wav
+
     if use_cache and not dry_run:
         cached = load_diarization_cache(
-            wav, num_speakers=num_speakers, threshold=threshold,
+            cache_input, num_speakers=num_speakers, threshold=threshold,
             seg_model=seg_model, emb_model=emb_model,
+            window_shift_ratio=config.diarization_window_shift,
         )
         if cached is not None:
             from whiz import ui
             ui.muted(
                 f"Reusing diarization cache ({len(cached)} segments, "
                 f"num_speakers={num_speakers or 'auto'}, threshold={threshold}): "
-                f"{diar_cache_path(wav)}"
+                f"{diar_cache_path(cache_input)}"
             )
             return cached
 
@@ -313,6 +338,9 @@ def run_diarization(
         print(f"  embedding model:    {emb_model}")
         print(f"  num_speakers:       {num_speakers}")
         print(f"  cluster_threshold:  {threshold}")
+        print(f"  requested provider: {config.diarization_provider}")
+        print(f"  threads:            {config.diarization_threads}")
+        print(f"  window shift ratio: {config.diarization_window_shift}")
         print(f"  wav:                {wav}")
         return []
 
@@ -320,12 +348,49 @@ def run_diarization(
 
     from whiz import ui
     ui.muted("Loading sherpa-onnx diarization ...")
+    if config.diarization_provider != "cpu":
+        ui.status(
+            f"Requested diarization provider: {config.diarization_provider}. "
+            "sherpa-onnx does not expose the native provider selected after "
+            "initialization; check its stderr for any provider fallback.",
+            kind="warn",
+        )
     # Which segmentation variant is in use — model.onnx (unquantized) or
     # model.int8.onnx — matters for quality (NS-15); make it visible.
     ui.muted(f"  segmentation model: {seg_model.name}")
-    seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
-    segmentation = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(pyannote=seg_cfg)
-    embedding = sherpa_onnx.SpeakerEmbeddingExtractorConfig(str(emb_model))
+    window_shift = config.diarization_window_shift
+    if window_shift == 0.1:
+        # sherpa-onnx's own default; keep the call that works on every
+        # version whiz supports (the kwarg arrived in sherpa-onnx 1.13.6).
+        seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
+    else:
+        try:
+            seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(seg_model),
+                window_shift_ratio=window_shift,
+            )
+        except TypeError as e:
+            raise RuntimeError(
+                f"diarization_window_shift={window_shift} requires sherpa-onnx >= 1.13.6: {e}"
+            ) from e
+    try:
+        segmentation = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+            pyannote=seg_cfg,
+            num_threads=config.diarization_threads,
+            provider=config.diarization_provider,
+        )
+        embedding = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            str(emb_model),
+            num_threads=config.diarization_threads,
+            provider=config.diarization_provider,
+        )
+    except Exception as e:
+        if config.diarization_provider != "cpu":
+            raise DiarizationProviderError(
+                "Could not configure requested sherpa-onnx provider "
+                f"{config.diarization_provider!r}: {e}"
+            ) from e
+        raise
     clustering = sherpa_onnx.FastClusteringConfig(
         num_clusters=num_speakers if num_speakers and num_speakers > 0 else -1,
         threshold=threshold,
@@ -342,7 +407,16 @@ def run_diarization(
             "sherpa-onnx diarization config validation failed; check model paths."
         )
 
-    sd = sherpa_onnx.OfflineSpeakerDiarization(sd_cfg)
+    started = time.monotonic()
+    try:
+        sd = sherpa_onnx.OfflineSpeakerDiarization(sd_cfg)
+    except Exception as e:
+        if config.diarization_provider != "cpu":
+            raise DiarizationProviderError(
+                "Could not initialize requested sherpa-onnx provider "
+                f"{config.diarization_provider!r}: {e}"
+            ) from e
+        raise
 
     samples, sample_rate = _read_wav_pcm(wav)
     if sample_rate != sd.sample_rate:
@@ -353,14 +427,28 @@ def run_diarization(
 
     from whiz import ui
     ui.muted("Running speaker diarization ...")
-    result = sd.process(samples, callback=_progress_callback).sort_by_start_time()
+    ui.muted(f"  requested provider: {config.diarization_provider}")
+    ui.muted(f"  threads: {config.diarization_threads}")
+    ui.muted(f"  window shift ratio: {config.diarization_window_shift}")
+    try:
+        result = sd.process(samples, callback=_progress_callback).sort_by_start_time()
+    except Exception as e:
+        if config.diarization_provider != "cpu":
+            raise DiarizationProviderError(
+                "sherpa-onnx diarization failed with requested provider "
+                f"{config.diarization_provider!r}: {e}"
+            ) from e
+        raise
+    elapsed = int(time.monotonic() - started)
     segments = [
         DiarSegment(start=r.start, end=r.end, speaker=r.speaker) for r in result
     ]
+    ui.muted(f"Speaker diarization completed in {elapsed // 60}:{elapsed % 60:02d}.")
     ui.muted(f"Diarization found {len(segments)} segments.")
     cache_path = _write_diarization_cache(
-        wav, segments, num_speakers, threshold,
+        cache_input, segments, num_speakers, threshold,
         seg_model=seg_model, emb_model=emb_model,
+        window_shift_ratio=config.diarization_window_shift,
     )
     ui.muted(f"Saved diarization cache: {cache_path}")
     return segments
