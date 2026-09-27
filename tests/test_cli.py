@@ -391,7 +391,7 @@ def test_transcribe_mp3_speakers_normalizes_for_whisper_and_diarization_then_cle
     _prepare_diarization_build(monkeypatch)
     extracted: list[Path] = []
     whisper_cmds: list[list[str]] = []
-    diarized: list[Path] = []
+    diarized: list[tuple[Path, Path | None]] = []
 
     def fake_extract(src, ffmpeg, dest_dir=None, dry_run=False, output=None):
         assert src == source
@@ -405,7 +405,7 @@ def test_transcribe_mp3_speakers_normalizes_for_whisper_and_diarization_then_cle
     monkeypatch.setattr(cli, "_run_whisper_streaming", lambda cmd: whisper_cmds.append(cmd) or SimpleNamespace(returncode=0))
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, *_a, **_k: diarized.append(wav) or [DiarSegment(start=0, end=1, speaker=0)],
+        lambda wav, *_a, **_k: diarized.append((wav, _k.get("cache_source"))) or [DiarSegment(start=0, end=1, speaker=0)],
     )
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(vad=False))
 
@@ -416,7 +416,7 @@ def test_transcribe_mp3_speakers_normalizes_for_whisper_and_diarization_then_cle
     assert extracted == [normalized]
     assert whisper_cmds[0][whisper_cmds[0].index("-f") + 1] == str(normalized)
     assert whisper_cmds[0][whisper_cmds[0].index("-of") + 1] == str(source)
-    assert diarized == [normalized]
+    assert diarized == [(normalized, source)]
     assert not normalized.exists()
     assert (tmp_path / "recording.speakers.txt").exists()
     assert not (tmp_path / "recording.mp3.speakers.txt").exists()
@@ -730,7 +730,7 @@ def _merge_args(file, outputs="html", speakers=1, speakers_names=None, no_speake
     )
 
 
-def _raise_sherpa_missing(wav, config, num_speakers=0, threshold=0.9):
+def _raise_sherpa_missing(wav, config, num_speakers=0, threshold=0.9, **_kwargs):
     # M2 (wave-1 audit): unavailability arrives as the TYPED exception now;
     # the "sherpa_onnx" token stays in the message for the SystemExit
     # match assertions below.
@@ -845,7 +845,7 @@ def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
             DiarSegment(start=3.0, end=5.0, speaker=1),
         ],
@@ -863,6 +863,50 @@ def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
     assert 'class="note"' not in html
 
 
+@pytest.mark.parametrize("command", ["transcribe", "merge"])
+def test_profile_provider_failure_keeps_labeled_outputs(tmp_path, monkeypatch, capsys, command):
+    diar = [DiarSegment(start=0.0, end=3.0, speaker=0)]
+    def fail_profiles(*_args, **_kwargs):
+        raise cli.D.DiarizationProviderError("CoreML embedding session unavailable")
+    monkeypatch.setattr(cli.P, "compute_speaker_embeddings", fail_profiles)
+
+    if command == "transcribe":
+        audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
+        monkeypatch.setattr(cli, "_run_diarize_or_fallback", lambda *_a: diar)
+        args = _transcribe_args(audio, outputs="srt,html", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_transcribe(args) == 0
+        base = tmp_path / "meeting.speakers"
+    else:
+        audio = tmp_path / "meeting.m4a"
+        audio.write_bytes(b"fake audio")
+        (tmp_path / "meeting.m4a.json").write_text(_WHISPER_JSON, encoding="utf-8")
+        monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
+        _stub_setup_ready(monkeypatch)
+        monkeypatch.setattr(cli.D, "run_diarization", lambda *_a, **_k: diar)
+        args = _merge_args(audio, outputs="html", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_merge(args) == 0
+        base = tmp_path / "meeting.m4a.speakers"
+
+    assert Path(str(base) + ".srt").exists()
+    assert Path(str(base) + ".txt").exists()
+    assert Path(str(base) + ".html").exists()
+    assert "voice-profile matching skipped" in capsys.readouterr().err
+
+
+def test_invalid_diarization_config_does_not_block_plain_transcription(tmp_path, monkeypatch):
+    source = tmp_path / "recording.mp3"
+    source.write_bytes(b"source")
+    _prepare_diarization_build(monkeypatch)
+    monkeypatch.setattr(
+        cli.cfg, "load", lambda: cli.cfg.Config(diarization_provider="nonsense", vad=False),
+    )
+    monkeypatch.setattr(cli.aud, "prepare_diarization_audio", lambda *_a, **_k: pytest.fail("plain transcription must stay direct"))
+    monkeypatch.setattr(cli, "_run_whisper_streaming", lambda _cmd: SimpleNamespace(returncode=0))
+    assert cli.cmd_transcribe(_transcribe_args(source, outputs="srt", speakers=None)) == 0
+
+
 def test_merge_mp3_finds_normalized_transcribe_json_and_cleans_audio(tmp_path, monkeypatch):
     audio = tmp_path / "meeting.mp3"
     audio.write_bytes(b"fake audio")
@@ -872,7 +916,7 @@ def test_merge_mp3_finds_normalized_transcribe_json_and_cleans_audio(tmp_path, m
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
     monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *a, **k: True)
     monkeypatch.setattr(cli.aud, "find_ffmpeg", lambda configured="": "ffmpeg")
-    diarized: list[Path] = []
+    diarized: list[tuple[Path, Path | None]] = []
 
     def fake_extract(src, ffmpeg, dest_dir=None, dry_run=False, output=None):
         assert src == audio
@@ -883,14 +927,14 @@ def test_merge_mp3_finds_normalized_transcribe_json_and_cleans_audio(tmp_path, m
     monkeypatch.setattr(cli.aud, "extract_audio", fake_extract)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, *_a, **_k: diarized.append(wav) or [
+        lambda wav, *_a, **_k: diarized.append((wav, _k.get("cache_source"))) or [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
 
     assert cli.cmd_merge(_merge_args(audio, outputs="html", speakers=1)) == 0
     normalized = tmp_path / "meeting.wav"
-    assert diarized == [normalized]
+    assert diarized == [(normalized, audio)]
     assert not normalized.exists()
 
 
@@ -961,7 +1005,7 @@ def test_merge_zero_segments_falls_back_to_unlabeled_html(tmp_path, monkeypatch,
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [],
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [],
     )
 
     rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=1))
@@ -985,7 +1029,7 @@ def test_merge_returns_1_when_nothing_written(tmp_path, monkeypatch, capsys):
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [],
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [],
     )
 
     rc = cli.cmd_merge(_merge_args(audio, outputs="", speakers=1))
@@ -1455,7 +1499,7 @@ def test_transcribe_auto_diarization_setup_success_writes_speakers_html(tmp_path
     (tmp_path / "recording.wav.json").write_text(_WHISPER_JSON, encoding="utf-8")
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -1517,7 +1561,7 @@ def test_merge_auto_diarization_setup_success_writes_labeled_outputs(tmp_path, m
     (tmp_path / "meeting.m4a.json").write_text(_WHISPER_JSON, encoding="utf-8")
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -1542,7 +1586,7 @@ def test_merge_zero_segments_message_is_actionable(tmp_path, monkeypatch, capsys
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [],
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [],
     )
 
     rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=1))
@@ -1581,7 +1625,7 @@ def test_speakers_match_runs_after_setup_success(tmp_path, monkeypatch, capsys):
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -1601,7 +1645,7 @@ def test_speakers_match_mp3_normalizes_for_diarization_then_cleans(tmp_path, mon
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
     monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *a, **k: True)
     monkeypatch.setattr(cli.aud, "find_ffmpeg", lambda configured="": "ffmpeg")
-    diarized: list[Path] = []
+    diarized: list[tuple[Path, Path | None]] = []
 
     def fake_extract(src, ffmpeg, dest_dir=None, dry_run=False, output=None):
         assert src == audio
@@ -1612,7 +1656,7 @@ def test_speakers_match_mp3_normalizes_for_diarization_then_cleans(tmp_path, mon
     monkeypatch.setattr(cli.aud, "extract_audio", fake_extract)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, *_a, **_k: diarized.append(wav) or [
+        lambda wav, *_a, **_k: diarized.append((wav, _k.get("cache_source"))) or [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -1622,7 +1666,7 @@ def test_speakers_match_mp3_normalizes_for_diarization_then_cleans(tmp_path, mon
 
     assert cli.cmd_speakers_match(args) == 0
     normalized = tmp_path / "meeting.wav"
-    assert diarized == [normalized]
+    assert diarized == [(normalized, audio)]
     assert not normalized.exists()
 
 
@@ -1952,7 +1996,7 @@ def test_merge_degraded_info_fires_without_diarization(tmp_path, monkeypatch, ca
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [],
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [],
     )
 
     rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=None))
@@ -1969,7 +2013,7 @@ def test_diarize_or_fallback_catches_typed_validate_failure(tmp_path, monkeypatc
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake audio")
 
-    def _raise_validate(wav, config, num_speakers=0, threshold=0.9):
+    def _raise_validate(wav, config, num_speakers=0, threshold=0.9, **_kwargs):
         raise cli.D.DiarizationUnavailable(
             "sherpa-onnx diarization config validation failed; check model paths."
         )
@@ -1995,7 +2039,7 @@ def test_merge_validate_failure_raises_systemexit_with_hint(tmp_path, monkeypatc
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
     _stub_setup_unavailable(monkeypatch)
 
-    def _raise_validate(wav, config, num_speakers=0, threshold=0.9):
+    def _raise_validate(wav, config, num_speakers=0, threshold=0.9, **_kwargs):
         raise cli.D.DiarizationUnavailable(
             "sherpa-onnx diarization config validation failed; check model paths."
         )
@@ -2094,7 +2138,7 @@ def test_merge_declined_setup_then_success_explains_cache_reuse(tmp_path, monkey
     _stub_setup_unavailable(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -2244,7 +2288,7 @@ def test_speakers_match_dim_mismatch_renders_na_not_crash(tmp_path, monkeypatch,
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -2279,7 +2323,7 @@ def test_merge_auto_match_never_merges_existing_profile(tmp_path, monkeypatch, c
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -2315,7 +2359,7 @@ def test_merge_confirmed_name_merges_existing_profile(tmp_path, monkeypatch, cap
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
@@ -2382,7 +2426,7 @@ def test_merge_speakers_names_overrides_wrong_auto_match(tmp_path, monkeypatch, 
     _stub_setup_ready(monkeypatch)
     monkeypatch.setattr(
         cli.D, "run_diarization",
-        lambda wav, config, num_speakers=0, threshold=0.9: [
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
             DiarSegment(start=0.0, end=3.0, speaker=0),
         ],
     )
