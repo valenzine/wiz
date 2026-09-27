@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.16.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.17.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -315,7 +315,7 @@ diarization_embedding_model = ""
 # and Pyannote window shift (0 < x <= 1; larger = faster, coarser)
 diarization_provider = "cpu"
 diarization_threads = 1
-diarization_window_shift = 0.1
+diarization_window_shift = 0.2
 # Remembered answer to the one-time diarization setup prompt
 # (unset = ask once on a TTY / auto-allow when scripted)
 auto_diarization_setup = true
@@ -359,13 +359,13 @@ wiz can label who spoke when on mono recordings (meetings, screen recordings) vi
 
 ### One-time setup
 
-Almost nothing to remember: the first run that needs diarization performs the setup itself — after asking. When diarization is about to run — auto-enabled for a video, or an explicit `--speakers` — and sherpa-onnx or its models are missing, wiz asks on an interactive terminal before touching anything: `Proceed? [y/N]`. Answering `y` installs `sherpa-onnx>=1.10` — the exact spec the `diarize` extra declares — into the environment wiz is running in, then downloads the diarization models (~90 MB, one time), with live progress in the terminal. `wiz transcribe recording.mov` on a fresh machine just works. The answer is remembered in the `auto_diarization_setup` config key, so the question is asked once, ever. Non-interactive sessions (piped stdin/stderr — scripts, cron, launchd) proceed without asking so a scripted fresh machine also just works; `wiz config set auto_diarization_setup=false` (or `=true`) answers permanently there too.
+Almost nothing to remember: the first run that needs diarization performs the setup itself — after asking. When diarization is about to run — auto-enabled for a video, or an explicit `--speakers` — and sherpa-onnx or its models are missing, wiz asks on an interactive terminal before touching anything: `Proceed? [y/N]`. Answering `y` installs `sherpa-onnx>=1.13.6` — the exact spec the `diarize` extra declares — into the environment wiz is running in, then downloads the diarization models (~90 MB, one time), with live progress in the terminal. `wiz transcribe recording.mov` on a fresh machine just works. The answer is remembered in the `auto_diarization_setup` config key, so the question is asked once, ever. Non-interactive sessions (piped stdin/stderr — scripts, cron, launchd) proceed without asking so a scripted fresh machine also just works; `wiz config set auto_diarization_setup=false` (or `=true`) answers permanently there too.
 
 Prefer to do it yourself (e.g. before an offline session)? The manual equivalent:
 
 ```bash
 # 1. Install the optional dependency into wiz's environment
-pipx inject transcript-wiz 'sherpa-onnx>=1.10'
+pipx inject transcript-wiz 'sherpa-onnx>=1.13.6'
 
 # 2. Download the diarization models (~90 MB total)
 wiz models download-diarization
@@ -393,9 +393,8 @@ wiz transcribe --speakers --cluster-threshold 0.95 call.m4a
 # Name the speakers interactively after transcription
 wiz transcribe --speakers 4 --name-speakers meeting.mov
 
-# Faster diarization: more threads, coarser segmentation window shift
-# (--diarization-window-shift > 0.1 needs sherpa-onnx >= 1.13.6)
-wiz transcribe --speakers 2 --diarization-threads 8 --diarization-window-shift 0.2 episode.mp3
+# Faster diarization: use more CPU threads (the default is 1)
+wiz transcribe --speakers 2 --diarization-threads 8 episode.mp3
 
 # Name speakers non-interactively (assigned by total talk time, most talkative first)
 wiz transcribe recording.mov --speakers-names Alice,Bob,Carol,Dave
