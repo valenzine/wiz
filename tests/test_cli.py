@@ -7,8 +7,10 @@ Run with: pytest tests/test_cli.py
 
 from __future__ import annotations
 
+import argparse
 import builtins
 import json
+import re
 import sys
 import wave
 from pathlib import Path
@@ -1431,7 +1433,7 @@ def test_install_sherpa_onnx_targets_running_venv_and_reports_progress(monkeypat
     assert cli._install_sherpa_onnx() is True
     # The spec the diarize extra declares, not a bare package name (review
     # round 3): a bare `pip install sherpa-onnx` could land an older version
-    # than the documented manual path (`pipx inject wiz 'wiz[diarize]'`).
+    # than the documented manual path (`cli._DIARIZE_INJECT`).
     assert seen["cmd"] == [sys.executable, "-m", "pip", "install", cli._DIARIZE_REQUIREMENT]
     assert ">=" in cli._DIARIZE_REQUIREMENT
     err = capsys.readouterr().err
@@ -1459,7 +1461,7 @@ def test_ensure_diarization_ready_install_failure_returns_false(monkeypatch, cap
     assert cli._ensure_diarization_ready(cli.cfg.Config()) is False
     err = capsys.readouterr().err
     assert "pip install sherpa-onnx failed" in err
-    assert "pipx inject wiz 'wiz[diarize]'" in err
+    assert cli._DIARIZE_INJECT in err
 
 
 def _fresh_machine_stubs(monkeypatch, events):
@@ -1612,7 +1614,7 @@ def test_speakers_match_setup_failure_exits_with_hint(tmp_path, monkeypatch):
 
     args = SimpleNamespace(file=str(audio), speakers=1, cluster_threshold=None,
                            no_auto_diarization_setup=False)
-    with pytest.raises(SystemExit, match="pipx inject wiz 'wiz\\[diarize\\]'"):
+    with pytest.raises(SystemExit, match=re.escape(cli._DIARIZE_INJECT)):
         cli.cmd_speakers_match(args)
 
 
@@ -1795,7 +1797,7 @@ def test_consent_tty_no_persists_false_with_way_back_hint(tmp_path, monkeypatch)
     assert "auto_diarization_setup = false" in saved
     # Wrap-insensitive: rich wraps the long hint lines at console width.
     flat = " ".join("".join(err.buf).split())
-    assert "pipx inject wiz 'wiz[diarize]'" in flat  # the manual path
+    assert cli._DIARIZE_INJECT in flat  # the manual path
     assert "wiz config set auto_diarization_setup=true" in flat  # the way back
 
 
@@ -2049,7 +2051,7 @@ def test_merge_validate_failure_raises_systemexit_with_hint(tmp_path, monkeypatc
     with pytest.raises(SystemExit) as excinfo:
         cli.cmd_merge(_merge_args(audio, outputs="", speakers=1))
     assert "config validation failed" in str(excinfo.value)
-    assert "pipx inject wiz 'wiz[diarize]'" in str(excinfo.value)
+    assert cli._DIARIZE_INJECT in str(excinfo.value)
 
 
 def test_transcribe_chained_analyze_failure_surfaces_message_and_rc(tmp_path, monkeypatch, capsys):
@@ -2124,7 +2126,7 @@ def test_install_sherpa_rc0_but_not_importable_warns(monkeypatch, capsys):
     assert cli._install_sherpa_onnx() is False
     flat = " ".join(capsys.readouterr().err.split())
     assert "still not importable" in flat
-    assert "pipx inject wiz 'wiz[diarize]'" in flat
+    assert cli._DIARIZE_INJECT in flat
 
 
 def test_merge_declined_setup_then_success_explains_cache_reuse(tmp_path, monkeypatch, capsys):
@@ -2456,3 +2458,40 @@ def test_merge_speakers_names_overrides_wrong_auto_match(tmp_path, monkeypatch, 
     wrong = json.loads((tmp_path / "WrongName.json").read_text(encoding="utf-8"))
     assert wrong["samples"] == 2
     assert all(abs(v - 0.5) < 1e-9 for v in wrong["embedding"])
+
+
+def test_diarize_install_hint_matches_the_extra_and_never_resolves_wiz():
+    """The manual hint installs exactly what the [diarize] extra declares, and
+    injects the requirement itself: an unrelated "wiz" package exists on PyPI."""
+    import tomllib
+
+    pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["optional-dependencies"]["diarize"] == [cli._DIARIZE_REQUIREMENT]
+    assert pyproject["project"]["name"] == cli.D.PIPX_PACKAGE == "transcript-wiz"
+    assert cli._DIARIZE_INJECT == f"pipx inject transcript-wiz '{cli._DIARIZE_REQUIREMENT}'"
+    assert "wiz[" not in cli._DIARIZE_INJECT
+
+
+def test_missing_sherpa_error_gives_the_same_install_command(monkeypatch):
+    import builtins as _builtins
+
+    real_import = _builtins.__import__
+
+    def no_sherpa(name, *args, **kwargs):
+        if name == "sherpa_onnx":
+            raise ImportError("No module named 'sherpa_onnx'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(_builtins, "__import__", no_sherpa)
+    with pytest.raises(cli.D.DiarizationUnavailable) as exc:
+        cli.D._import_sherpa()
+    assert cli._DIARIZE_INJECT in str(exc.value)
+
+
+def test_upgrade_reinjects_the_diarize_requirement_into_the_pipx_package(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "_diarize_extra_installed", lambda: True)
+    monkeypatch.setattr(cli, "_run_live", lambda cmd: calls.append(cmd) or 0)
+    assert cli.cmd_upgrade(argparse.Namespace()) == 0
+    assert calls[0] == ["pipx", "install", "--force", cli._INSTALL_SOURCE]
+    assert calls[1] == ["pipx", "inject", "transcript-wiz", cli._DIARIZE_REQUIREMENT]

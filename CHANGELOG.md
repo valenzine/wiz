@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format is based on
   package is `wiz`, settings live in `~/.config/wiz` (override with
   `WIZ_CONFIG_DIR`, formerly `WHIZ_CONFIG_DIR`) and diarization models in
   `~/.cache/wiz/diarization`.
+- The package is published as `transcript-wiz`, because `wiz` is taken on PyPI
+  by an unrelated project. pipx lists it under that name, and `pipx inject` /
+  `pipx uninstall` use it; the command is still `wiz`.
 - New logo, and a wave instead of a lightning bolt in the terminal header.
 
 ### Added
@@ -31,7 +34,7 @@ All notable changes to this project are documented here. The format is based on
 ### Upgrading
 
 Install wiz with `pipx install git+https://github.com/valenzine/wiz.git`. pipx
-treats it as a new package, so the old `whiz` command stays until you run
+treats it as a new package (`transcript-wiz`), so the old `whiz` command stays until you run
 `pipx uninstall whiz`.
 
 ## [0.15.0] - 2026-09-27

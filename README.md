@@ -94,6 +94,10 @@ For the full set of flags, run `wiz transcribe --help`, `wiz merge --help`, or `
 pipx install git+https://github.com/valenzine/wiz.git
 ```
 
+The package is named `transcript-wiz` (the name `wiz` is taken on PyPI by an unrelated
+project), so that's the name pipx shows and the one `pipx inject` / `pipx uninstall` use.
+The command is `wiz`.
+
 Or from a clone:
 
 ```bash
@@ -361,7 +365,7 @@ Prefer to do it yourself (e.g. before an offline session)? The manual equivalent
 
 ```bash
 # 1. Install the optional dependency into wiz's environment
-pipx inject wiz 'wiz[diarize]'
+pipx inject transcript-wiz 'sherpa-onnx>=1.10'
 
 # 2. Download the diarization models (~90 MB total)
 wiz models download-diarization

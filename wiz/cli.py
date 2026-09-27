@@ -53,10 +53,11 @@ OUTPUT_FLAGS = {
 # The diarize extra's requirement string. The auto-setup installs the SAME
 # spec pyproject declares — a bare `pip install sherpa-onnx` could land a
 # version older than the project's declared minimum, making the auto path and
-# the documented manual path (`pipx inject wiz 'wiz[diarize]'`) install
-# different things. Keep in sync with [project.optional-dependencies] diarize
-# in pyproject.toml.
-_DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
+# the documented manual path install different things. Keep in sync with
+# [project.optional-dependencies] diarize in pyproject.toml.
+_DIARIZE_REQUIREMENT = D.DIARIZE_REQUIREMENT
+# The manual install command shown in hints (see diarize.DIARIZE_INJECT).
+_DIARIZE_INJECT = D.DIARIZE_INJECT
 
 
 def _find_whisper_cli(configured: str = "") -> str:
@@ -264,8 +265,8 @@ def _install_sherpa_onnx() -> bool:
 
     ``sys.executable`` (not a pipx binary) installs into whatever venv is
     running wiz — a dev ``uv run`` venv, a pipx venv, anything — so this
-    also covers upgrade-reinstalled environments. Under pipx, ``pipx inject
-    wiz 'wiz[diarize]'`` is the equivalent manual command (see README).
+    also covers upgrade-reinstalled environments. Under pipx, ``_DIARIZE_INJECT``
+    is the equivalent manual command (see README).
     """
     import importlib
 
@@ -277,7 +278,7 @@ def _install_sherpa_onnx() -> bool:
     ).returncode
     if rc != 0:
         ui.status(f"Warning: pip install sherpa-onnx failed (exit {rc}).", kind="warn",
-                  detail="Run manually: pipx inject wiz 'wiz[diarize]'")
+                  detail=f"Run manually: {_DIARIZE_INJECT}")
         return False
     importlib.invalidate_caches()
     try:
@@ -291,13 +292,13 @@ def _install_sherpa_onnx() -> bool:
             ui.status(
                 "Warning: pip reported success but sherpa_onnx is still not importable.",
                 kind="warn",
-                detail="Install manually: pipx inject wiz 'wiz[diarize]' "
+                detail=f"Install manually: {_DIARIZE_INJECT} "
                        "&& wiz models download-diarization",
             )
             return False
     except Exception as e:  # noqa: BLE001
         ui.status(f"Warning: could not verify the sherpa-onnx install: {e}", kind="warn",
-                  detail="Install manually: pipx inject wiz 'wiz[diarize]'")
+                  detail=f"Install manually: {_DIARIZE_INJECT}")
         return False
     ui.status("sherpa-onnx installed.", kind="ok")
     return True
@@ -348,7 +349,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     if not allowed:
         ui.status(
             "Skipping the one-time diarization setup (declined). Install "
-            "manually with: pipx inject wiz 'wiz[diarize]' && wiz models "
+            f"manually with: {_DIARIZE_INJECT} && wiz models "
             "download-diarization — or allow it later with: wiz config set "
             "auto_diarization_setup=true",
             kind="hint",
@@ -514,7 +515,7 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
     ) and speakers_auto and args.speakers is None:
         ui.status("Speakers: diarization not available (setup incomplete); skipping speaker labels for this run.",
                   kind="hint",
-                  detail="Run manually: pipx inject wiz 'wiz[diarize]' && wiz models download-diarization")
+                  detail=f"Run manually: {_DIARIZE_INJECT} && wiz models download-diarization")
         ui.muted("  Or silence this with: --no-speakers")
         diarize_enabled = False
         speakers_auto = False
@@ -1180,7 +1181,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
         lead = ("Falling back to generic 'Speaker' labels. Enable with: "
                 if _will_write_generic_labels(args) else
                 "Skipping speaker labels for this run. Enable with: ")
-        detail = lead + "pipx inject wiz 'wiz[diarize]' && wiz models download-diarization"
+        detail = lead + f"{_DIARIZE_INJECT} && wiz models download-diarization"
         extra = _discarded_naming_detail(args)
         if extra:
             detail += f" {extra}"
@@ -2049,7 +2050,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
             naming = _discarded_naming_detail(args)
             if speakers_auto and args.speakers is None:
                 # Auto-enabled only: fall back to unlabeled output, don't crash.
-                detail = ("Skipping speaker labels. Enable with: pipx inject wiz 'wiz[diarize]' "
+                detail = (f"Skipping speaker labels. Enable with: {_DIARIZE_INJECT} "
                           "&& wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
@@ -2062,7 +2063,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 # can still be produced: degrade to generic 'Speaker' labels
                 # instead of crashing (mirrors the `wiz transcribe` fallback).
                 detail = ("Falling back to generic 'Speaker' labels. Enable with: "
-                          "pipx inject wiz 'wiz[diarize]' && wiz models download-diarization")
+                          f"{_DIARIZE_INJECT} && wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2071,7 +2072,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 degraded_note_shown = True
             else:
                 raise SystemExit(
-                    f"{msg}\nEnable diarization with: pipx inject wiz 'wiz[diarize]' && "
+                    f"{msg}\nEnable diarization with: {_DIARIZE_INJECT} && "
                     f"wiz models download-diarization"
                 )
     if speakers_requested and not diar_segments:
@@ -2309,7 +2310,7 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
         raise SystemExit(
             "Diarization unavailable (sherpa-onnx or models missing, setup "
             "failed or opted out).\n"
-            "Run manually: pipx inject wiz 'wiz[diarize]' && "
+            f"Run manually: {_DIARIZE_INJECT} && "
             "wiz models download-diarization"
         )
 
@@ -2528,11 +2529,11 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
     if had_diarize:
         ui.phase("refreshing the diarize extra")
-        rc = _run_live(["pipx", "inject", "wiz", "wiz[diarize]"])
+        rc = _run_live(["pipx", "inject", D.PIPX_PACKAGE, _DIARIZE_REQUIREMENT])
         if rc != 0:
             ui.status(
-                f"pipx inject wiz[diarize] failed (exit {rc}). Speaker detection may be "
-                "stale — re-run: pipx inject wiz 'wiz[diarize]'",
+                f"pipx inject of {_DIARIZE_REQUIREMENT} failed (exit {rc}). Speaker detection may be "
+                f"stale — re-run: {_DIARIZE_INJECT}",
                 kind="warn",
             )
         else:

@@ -100,8 +100,8 @@ def status(msg: str, kind: str = "info", detail: str | None = None) -> None:
     dimmed indented follow-up line — used for remediation hints under warnings.
 
     ``msg``/``detail`` are rendered as LITERAL text: messages routinely carry
-    data-derived strings (paths, commands like ``pipx inject wiz
-    'wiz[diarize]'``), and rich would otherwise parse ``[...]`` as a style
+    data-derived strings (paths like ``talk [final].mp3``, package
+    extras like ``wiz[diarize]``), and rich would otherwise parse ``[...]`` as a style
     tag and silently eat it. Callers wanting markup should assemble a Text
     or use a dedicated renderer.
     """
@@ -131,8 +131,8 @@ def info(msg: str) -> None:
 
 def muted(msg: str) -> None:
     """A dimmed line, e.g. 'removed intermediate foo.wav'. Literal text — see
-    ``status`` for why (commands like ``pipx inject wiz 'wiz[diarize]'
-    must survive verbatim)."""
+    ``status`` for why (bracketed text like ``talk [final].mp3`` must
+    survive verbatim)."""
     _console.print(Text(msg, style="wiz.muted"))
 
 

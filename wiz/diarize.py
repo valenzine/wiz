@@ -3,7 +3,7 @@
 sherpa-onnx combines a pyannote segmentation model with a speaker-embedding
 extractor and clustering to produce (start, end, speaker) segments. This
 module lazily imports the sherpa_onnx package (an optional dependency,
-installed via `pipx inject wiz sherpa-onnx`), locates the two required
+installed via ``DIARIZE_INJECT``), locates the two required
 model files, downloads them if needed, and returns structured segments.
 """
 
@@ -21,6 +21,19 @@ from pathlib import Path
 from wiz import config as cfg
 
 _DIAR_CACHE_VERSION = 2
+
+# The published package name. PyPI's "wiz" belongs to an unrelated project,
+# so wiz is distributed as transcript-wiz; the command and import stay "wiz".
+# pipx names its environment after this, so every pipx command needs it.
+PIPX_PACKAGE = "transcript-wiz"
+# The diarize extra's requirement. Keep in sync with
+# [project.optional-dependencies] diarize in pyproject.toml (a test checks).
+DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
+# The manual install command shown in hints. It injects the requirement
+# itself rather than 'transcript-wiz[diarize]', so pip never resolves a
+# package name on PyPI for it.
+DIARIZE_INJECT = f"pipx inject {PIPX_PACKAGE} '{DIARIZE_REQUIREMENT}'"
+
 
 class DiarizationUnavailable(RuntimeError):
     """Diarization cannot run: missing package/models or invalid model config.
@@ -70,7 +83,7 @@ def _import_sherpa():
     except ImportError as e:
         raise DiarizationUnavailable(
             "sherpa_onnx is not installed.\n"
-            "Install it into wiz with:  pipx inject wiz sherpa-onnx\n"
+            f"Install it into wiz with:  {DIARIZE_INJECT}\n"
             f"(underlying error: {e})"
         ) from e
     return sherpa_onnx
