@@ -2669,8 +2669,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        cfg.migrate_legacy_dirs(on_copied=lambda old, new: ui.info(
-            f"Copied your whiz data from {old} to {new} (the original is untouched)."))
+        for old, new in cfg.migrate_legacy_dirs():
+            ui.info(f"Copied your whiz data from {old} to {new} (the original is untouched).")
         rc = args.func(args)
     except SystemExit:
         raise

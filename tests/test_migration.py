@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -14,7 +18,8 @@ from wiz import config as cfg
 
 @pytest.fixture
 def dirs(tmp_path, monkeypatch):
-    monkeypatch.delenv("WIZ_CONFIG_DIR", raising=False)
+    # Independent of the caller's shell: no explicit config dir in effect.
+    monkeypatch.setattr(cfg, "_EXPLICIT_CONFIG_DIR", None)
     old_cfg, old_cache = tmp_path / ".config/whiz", tmp_path / ".cache/whiz"
     new_cfg, new_cache = tmp_path / ".config/wiz", tmp_path / ".cache/wiz"
     (old_cfg / "speakers").mkdir(parents=True)
@@ -29,9 +34,13 @@ def dirs(tmp_path, monkeypatch):
     return old_cfg, old_cache, new_cfg, new_cache
 
 
+def _migrate():
+    return list(cfg.migrate_legacy_dirs())
+
+
 def test_copies_profiles_config_and_models_and_keeps_originals(dirs):
     old_cfg, old_cache, new_cfg, new_cache = dirs
-    assert cfg.migrate_legacy_dirs() == [(old_cfg, new_cfg), (old_cache, new_cache)]
+    assert _migrate() == [(old_cfg, new_cfg), (old_cache, new_cache)]
     assert (new_cfg / "speakers" / "Axel.json").read_text(encoding="utf-8") == '{"name": "Axel"}'
     assert (new_cfg / "config.toml").read_text(encoding="utf-8") == 'model = "turbo"\n'
     assert (new_cache / "diarization" / "model.onnx").read_bytes() == b"model"
@@ -39,27 +48,54 @@ def test_copies_profiles_config_and_models_and_keeps_originals(dirs):
     assert (old_cfg / "speakers" / "Axel.json").exists()
     assert (old_cache / "diarization" / "model.onnx").exists()
     # Runs once: a second call is a no-op.
-    assert cfg.migrate_legacy_dirs() == []
+    assert _migrate() == []
 
 
 def test_never_touches_an_existing_wiz_dir(dirs):
     _, _, new_cfg, _ = dirs
     new_cfg.mkdir(parents=True)
     (new_cfg / "config.toml").write_text('model = "mine"\n', encoding="utf-8")
-    cfg.migrate_legacy_dirs()
+    _migrate()
     assert (new_cfg / "config.toml").read_text(encoding="utf-8") == 'model = "mine"\n'
     assert not (new_cfg / "speakers").exists()
 
 
 def test_explicit_config_dir_opts_out_of_config_migration(dirs, monkeypatch):
-    old_cfg, old_cache, new_cfg, new_cache = dirs
-    monkeypatch.setenv("WIZ_CONFIG_DIR", str(new_cfg))
-    assert cfg.migrate_legacy_dirs() == [(old_cache, new_cache)]
+    _, old_cache, new_cfg, new_cache = dirs
+    monkeypatch.setattr(cfg, "_EXPLICIT_CONFIG_DIR", str(new_cfg))
+    assert _migrate() == [(old_cache, new_cache)]
     assert not new_cfg.exists()
 
 
-def _temp_siblings(new):
-    return sorted(new.parent.glob(f".{new.name}.migrating-*"))
+def _config_dir_with_env(**env_overrides):
+    env = {k: v for k, v in os.environ.items() if k not in ("WIZ_CONFIG_DIR", "WHIZ_CONFIG_DIR")}
+    env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, "-c", "from wiz import config; print(config.CONFIG_DIR, config._EXPLICIT_CONFIG_DIR)"],
+        env=env, capture_output=True, text=True, check=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    ).stdout.split()
+
+
+def test_explicit_config_dir_is_used_as_is(tmp_path):
+    a, b = str(tmp_path / "a"), str(tmp_path / "b")
+    assert _config_dir_with_env(WIZ_CONFIG_DIR=a) == [a, a]
+    # The whiz-era variable keeps a custom location working...
+    assert _config_dir_with_env(WHIZ_CONFIG_DIR=b) == [b, b]
+    # ...but the new name wins when both are set.
+    assert _config_dir_with_env(WIZ_CONFIG_DIR=a, WHIZ_CONFIG_DIR=b) == [a, a]
+    assert _config_dir_with_env()[1] == "None"
+
+
+def test_temp_dir_left_by_a_killed_run_is_replaced(dirs):
+    _, _, new_cfg, _ = dirs
+    stale = new_cfg.with_name(".wiz.migrating")
+    stale.mkdir(parents=True)
+    (stale / "half-copied").write_text("x", encoding="utf-8")
+    _migrate()
+    assert (new_cfg / "speakers" / "Axel.json").exists()
+    assert not (new_cfg / "half-copied").exists()
+    assert not stale.exists()
 
 
 def test_interrupted_copy_leaves_nothing_and_is_retried(dirs, monkeypatch):
@@ -67,39 +103,56 @@ def test_interrupted_copy_leaves_nothing_and_is_retried(dirs, monkeypatch):
     real_copytree = shutil.copytree
 
     def interrupted(src, dst, *args, **kwargs):
-        (dst / "half-copied").write_text("x", encoding="utf-8")
+        Path(dst).mkdir(parents=True)
+        (Path(dst) / "half-copied").write_text("x", encoding="utf-8")
         raise KeyboardInterrupt
 
     monkeypatch.setattr(shutil, "copytree", interrupted)
     with pytest.raises(KeyboardInterrupt):
-        cfg.migrate_legacy_dirs()
-    assert not new_cfg.exists() and _temp_siblings(new_cfg) == []
+        _migrate()
+    assert not new_cfg.exists() and not new_cfg.with_name(".wiz.migrating").exists()
 
     monkeypatch.setattr(shutil, "copytree", real_copytree)
-    cfg.migrate_legacy_dirs()
+    _migrate()
     assert (new_cfg / "speakers" / "Axel.json").exists()
-    assert not (new_cfg / "half-copied").exists()
 
 
-def test_concurrent_run_that_finished_first_is_not_an_error(dirs, monkeypatch):
-    old_cfg, old_cache, new_cfg, new_cache = dirs
-    real_copytree = shutil.copytree
+def test_failed_copy_is_loud_and_leaves_no_partial_dir(dirs, monkeypatch):
+    old_cfg, _, new_cfg, _ = dirs
 
-    def other_wiz_wins(src, dst, *args, **kwargs):
-        real_copytree(src, dst, *args, **kwargs)
-        if src == old_cfg:  # another wiz command completes the same copy meanwhile
-            real_copytree(src, new_cfg)
+    def disk_full(src, dst, *args, **kwargs):
+        (Path(dst) / "partial").mkdir(parents=True)
+        raise OSError("No space left on device")
 
-    monkeypatch.setattr(shutil, "copytree", other_wiz_wins)
-    assert cfg.migrate_legacy_dirs() == [(old_cache, new_cache)]
-    assert (new_cfg / "speakers" / "Axel.json").exists()
-    assert _temp_siblings(new_cfg) == []
+    monkeypatch.setattr(shutil, "copytree", disk_full)
+    with pytest.raises(RuntimeError, match="No space left.*Nothing was removed.*mkdir -p"):
+        _migrate()
+    assert not new_cfg.exists()
+    assert not new_cfg.with_name(".wiz.migrating").exists()
+    assert (old_cfg / "speakers" / "Axel.json").exists()
 
 
-def test_notice_for_a_finished_copy_survives_a_later_failure(dirs, monkeypatch):
-    old_cfg, old_cache, new_cfg, _ = dirs
+def test_run_that_waited_for_another_wiz_does_not_copy_again(dirs, monkeypatch):
+    old_cfg, _, new_cfg, _ = dirs
     real_copytree = shutil.copytree
     copied = []
+
+    @contextlib.contextmanager
+    def other_wiz_finished_while_waiting(directory):
+        if directory == new_cfg.parent:
+            real_copytree(old_cfg, new_cfg)
+        yield
+
+    monkeypatch.setattr(cfg, "_exclusive_lock", other_wiz_finished_while_waiting)
+    monkeypatch.setattr(shutil, "copytree", lambda src, *a, **k: copied.append(src) or real_copytree(src, *a, **k))
+    pairs = _migrate()
+    assert old_cfg not in copied
+    assert [old for old, _ in pairs] == [cfg.LEGACY_CACHE_DIR]
+
+
+def test_copy_is_reported_before_a_later_failure(dirs, monkeypatch):
+    old_cfg, old_cache, new_cfg, _ = dirs
+    real_copytree = shutil.copytree
 
     def cache_fails(src, dst, *args, **kwargs):
         if src == old_cache:
@@ -107,73 +160,27 @@ def test_notice_for_a_finished_copy_survives_a_later_failure(dirs, monkeypatch):
         return real_copytree(src, dst, *args, **kwargs)
 
     monkeypatch.setattr(shutil, "copytree", cache_fails)
+    reported = []
     with pytest.raises(RuntimeError, match="Permission denied"):
-        cfg.migrate_legacy_dirs(on_copied=lambda old, new: copied.append((old, new)))
-    assert copied == [(old_cfg, new_cfg)]
+        for pair in cfg.migrate_legacy_dirs():
+            reported.append(pair)
+    assert reported == [(old_cfg, new_cfg)]
 
 
-def _config_dir_with_env(**env_overrides):
-    import os
-    import subprocess
-    import sys
-
-    env = {k: v for k, v in os.environ.items() if k not in ("WIZ_CONFIG_DIR", "WHIZ_CONFIG_DIR")}
-    env.update(env_overrides)
-    return subprocess.run(
-        [sys.executable, "-c", "from wiz import config; print(config.CONFIG_DIR)"],
-        env=env, capture_output=True, text=True, check=True,
-        cwd=Path(__file__).resolve().parent.parent,
-    ).stdout.strip()
-
-
-def test_explicit_config_dir_is_used_as_is(tmp_path):
-    assert _config_dir_with_env(WIZ_CONFIG_DIR=str(tmp_path / "a")) == str(tmp_path / "a")
-    # The whiz-era variable keeps a custom location working...
-    assert _config_dir_with_env(WHIZ_CONFIG_DIR=str(tmp_path / "b")) == str(tmp_path / "b")
-    # ...but the new name wins when both are set.
-    assert _config_dir_with_env(
-        WIZ_CONFIG_DIR=str(tmp_path / "a"), WHIZ_CONFIG_DIR=str(tmp_path / "b"),
-    ) == str(tmp_path / "a")
-
-
-def test_old_config_dir_variable_opts_out_of_config_migration(dirs, monkeypatch):
-    old_cfg, old_cache, new_cfg, new_cache = dirs
-    monkeypatch.setenv("WHIZ_CONFIG_DIR", str(old_cfg))
-    assert cfg.migrate_legacy_dirs() == [(old_cache, new_cache)]
-    assert not new_cfg.exists()
-
-
-def test_temp_copy_of_a_killed_process_is_cleaned_up(dirs):
-    import subprocess
-    import sys
-
-    _, _, new_cfg, _ = dirs
-    new_cfg.parent.mkdir(parents=True, exist_ok=True)
-    dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
-                          capture_output=True, text=True, check=True).stdout.strip()
-    killed = new_cfg.parent / f".wiz.migrating-{dead}-abc"
-    running = new_cfg.parent / f".wiz.migrating-{os.getpid()}-def"
-    for d in (killed, running):
-        (d / "speakers").mkdir(parents=True)
-    cfg.migrate_legacy_dirs()
-    assert not killed.exists()          # its process is gone
-    assert running.exists()             # a copy still in progress is left alone
-    assert (new_cfg / "speakers" / "Axel.json").exists()
-
-
-def test_failed_copy_is_loud_and_leaves_no_partial_dir(dirs, monkeypatch):
-    old_cfg, _, new_cfg, _ = dirs
-
-    def disk_full(src, dst, **_kwargs):
-        (dst / "partial").mkdir(parents=True)
-        raise OSError("No space left on device")
-
-    monkeypatch.setattr(shutil, "copytree", disk_full)
-    with pytest.raises(RuntimeError, match="No space left.*Nothing was removed.*mkdir -p"):
-        cfg.migrate_legacy_dirs()
-    assert not new_cfg.exists()
-    assert _temp_siblings(new_cfg) == []
-    assert (old_cfg / "speakers" / "Axel.json").exists()
+def test_lock_makes_a_second_process_wait(tmp_path):
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDONLY); "
+         "fcntl.flock(fd, fcntl.LOCK_EX); print('held', flush=True); time.sleep(0.5)",
+         str(tmp_path)],
+        stdout=subprocess.PIPE, text=True,
+    )
+    assert holder.stdout.readline().strip() == "held"
+    started = time.monotonic()
+    with cfg._exclusive_lock(tmp_path):
+        waited = time.monotonic() - started
+    holder.wait()
+    assert waited > 0.2
 
 
 def test_main_migrates_before_running_the_command(dirs, monkeypatch, capsys):
