@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
-import time
+import threading
 from pathlib import Path
 
 import pytest
@@ -167,20 +167,33 @@ def test_copy_is_reported_before_a_later_failure(dirs, monkeypatch):
     assert reported == [(old_cfg, new_cfg)]
 
 
-def test_lock_makes_a_second_process_wait(tmp_path):
+def test_lock_held_by_another_process_excludes_us(tmp_path):
     holder = subprocess.Popen(
         [sys.executable, "-c",
-         "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDONLY); "
-         "fcntl.flock(fd, fcntl.LOCK_EX); print('held', flush=True); time.sleep(0.5)",
+         "import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDONLY); "
+         "fcntl.flock(fd, fcntl.LOCK_EX); print('held', flush=True); sys.stdin.readline()",
          str(tmp_path)],
-        stdout=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
     )
-    assert holder.stdout.readline().strip() == "held"
-    started = time.monotonic()
-    with cfg._exclusive_lock(tmp_path):
-        waited = time.monotonic() - started
-    holder.wait()
-    assert waited > 0.2
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        acquired = threading.Event()
+
+        def take_lock():
+            with cfg._exclusive_lock(tmp_path):
+                acquired.set()
+
+        waiter = threading.Thread(target=take_lock, daemon=True)
+        waiter.start()
+        # Still blocked while the other process holds the lock. (A slow machine
+        # only makes this wait longer; it can't make a working lock fail it.)
+        assert not acquired.wait(0.2)
+    finally:
+        holder.stdin.write("release\n")
+        holder.stdin.flush()
+        holder.wait()
+    waiter.join(5)
+    assert acquired.is_set()  # and it gets the lock once the holder is gone
 
 
 def test_main_migrates_before_running_the_command(dirs, monkeypatch, capsys):
