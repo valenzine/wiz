@@ -50,15 +50,6 @@ OUTPUT_FLAGS = {
     "html": "__wiz_html__",  # sentinel; filtered out before whisper-cli
 }
 
-# The diarize extra's requirement string. The auto-setup installs the SAME
-# spec pyproject declares — a bare `pip install sherpa-onnx` could land a
-# version older than the project's declared minimum, making the auto path and
-# the documented manual path install different things. Keep in sync with
-# [project.optional-dependencies] diarize in pyproject.toml.
-_DIARIZE_REQUIREMENT = D.DIARIZE_REQUIREMENT
-# The manual install command shown in hints (see diarize.DIARIZE_INJECT).
-_DIARIZE_INJECT = D.DIARIZE_INJECT
-
 
 def _find_whisper_cli(configured: str = "") -> str:
     if configured:
@@ -256,7 +247,7 @@ def _diarization_available(config: cfg.Config) -> bool:
 def _install_sherpa_onnx() -> bool:
     """Install the ``diarize`` extra (sherpa-onnx) into the running venv.
 
-    Runs ``{sys.executable} -m pip install {_DIARIZE_REQUIREMENT}`` streaming
+    Runs ``{sys.executable} -m pip install {D.DIARIZE_REQUIREMENT}`` streaming
     output live, then refreshes Python's import caches so the very next
     ``import sherpa_onnx`` in THIS process sees the fresh wheel without a
     restart (pip puts it in site-packages; importlib.invalidate_caches + a
@@ -265,7 +256,7 @@ def _install_sherpa_onnx() -> bool:
 
     ``sys.executable`` (not a pipx binary) installs into whatever venv is
     running wiz — a dev ``uv run`` venv, a pipx venv, anything — so this
-    also covers upgrade-reinstalled environments. Under pipx, ``_DIARIZE_INJECT``
+    also covers upgrade-reinstalled environments. Under pipx, ``D.DIARIZE_INJECT``
     is the equivalent manual command (see README).
     """
     import importlib
@@ -273,12 +264,12 @@ def _install_sherpa_onnx() -> bool:
     ui.status("Speakers: sherpa-onnx missing — installing the diarize extra now", kind="info")
     ui.muted("One-time setup (a ~90 MB wheel + model download on first run). Opt out with: --no-auto-diarization-setup")
     rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", _DIARIZE_REQUIREMENT],
+        [sys.executable, "-m", "pip", "install", D.DIARIZE_REQUIREMENT],
         check=False,
     ).returncode
     if rc != 0:
         ui.status(f"Warning: pip install sherpa-onnx failed (exit {rc}).", kind="warn",
-                  detail=f"Run manually: {_DIARIZE_INJECT}")
+                  detail=f"Run manually: {D.DIARIZE_INJECT}")
         return False
     importlib.invalidate_caches()
     try:
@@ -292,13 +283,13 @@ def _install_sherpa_onnx() -> bool:
             ui.status(
                 "Warning: pip reported success but sherpa_onnx is still not importable.",
                 kind="warn",
-                detail=f"Install manually: {_DIARIZE_INJECT} "
+                detail=f"Install manually: {D.DIARIZE_INJECT} "
                        "&& wiz models download-diarization",
             )
             return False
     except Exception as e:  # noqa: BLE001
         ui.status(f"Warning: could not verify the sherpa-onnx install: {e}", kind="warn",
-                  detail=f"Install manually: {_DIARIZE_INJECT}")
+                  detail=f"Install manually: {D.DIARIZE_INJECT}")
         return False
     ui.status("sherpa-onnx installed.", kind="ok")
     return True
@@ -332,7 +323,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
         return True
     ui.status(
         "Speakers: diarization needs a one-time setup — install "
-        f"'{_DIARIZE_REQUIREMENT}' into this Python environment and "
+        f"'{D.DIARIZE_REQUIREMENT}' into this Python environment and "
         "download the diarization models (~90 MB).",
         kind="info",
     )
@@ -349,7 +340,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     if not allowed:
         ui.status(
             "Skipping the one-time diarization setup (declined). Install "
-            f"manually with: {_DIARIZE_INJECT} && wiz models "
+            f"manually with: {D.DIARIZE_INJECT} && wiz models "
             "download-diarization — or allow it later with: wiz config set "
             "auto_diarization_setup=true",
             kind="hint",
@@ -394,7 +385,7 @@ def _ensure_diarization_ready(config: cfg.Config, *, dry_run: bool = False, setu
         return True
     if dry_run:
         ui.muted("DRY-RUN: diarization setup would run — pip install "
-                 f"'{_DIARIZE_REQUIREMENT}' + download diarization models "
+                 f"'{D.DIARIZE_REQUIREMENT}' + download diarization models "
                  "(~90 MB one-time).")
         return False
     if not setup_allowed:
@@ -515,7 +506,7 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
     ) and speakers_auto and args.speakers is None:
         ui.status("Speakers: diarization not available (setup incomplete); skipping speaker labels for this run.",
                   kind="hint",
-                  detail=f"Run manually: {_DIARIZE_INJECT} && wiz models download-diarization")
+                  detail=f"Run manually: {D.DIARIZE_INJECT} && wiz models download-diarization")
         ui.muted("  Or silence this with: --no-speakers")
         diarize_enabled = False
         speakers_auto = False
@@ -1181,7 +1172,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
         lead = ("Falling back to generic 'Speaker' labels. Enable with: "
                 if _will_write_generic_labels(args) else
                 "Skipping speaker labels for this run. Enable with: ")
-        detail = lead + f"{_DIARIZE_INJECT} && wiz models download-diarization"
+        detail = lead + f"{D.DIARIZE_INJECT} && wiz models download-diarization"
         extra = _discarded_naming_detail(args)
         if extra:
             detail += f" {extra}"
@@ -2050,7 +2041,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
             naming = _discarded_naming_detail(args)
             if speakers_auto and args.speakers is None:
                 # Auto-enabled only: fall back to unlabeled output, don't crash.
-                detail = (f"Skipping speaker labels. Enable with: {_DIARIZE_INJECT} "
+                detail = (f"Skipping speaker labels. Enable with: {D.DIARIZE_INJECT} "
                           "&& wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
@@ -2063,7 +2054,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 # can still be produced: degrade to generic 'Speaker' labels
                 # instead of crashing (mirrors the `wiz transcribe` fallback).
                 detail = ("Falling back to generic 'Speaker' labels. Enable with: "
-                          f"{_DIARIZE_INJECT} && wiz models download-diarization")
+                          f"{D.DIARIZE_INJECT} && wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2072,7 +2063,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 degraded_note_shown = True
             else:
                 raise SystemExit(
-                    f"{msg}\nEnable diarization with: {_DIARIZE_INJECT} && "
+                    f"{msg}\nEnable diarization with: {D.DIARIZE_INJECT} && "
                     f"wiz models download-diarization"
                 )
     if speakers_requested and not diar_segments:
@@ -2235,8 +2226,6 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     return 0
 
 
-
-
 # ---------- speakers (voice profiles) ----------
 
 def cmd_speakers_list(args: argparse.Namespace) -> int:
@@ -2310,7 +2299,7 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
         raise SystemExit(
             "Diarization unavailable (sherpa-onnx or models missing, setup "
             "failed or opted out).\n"
-            f"Run manually: {_DIARIZE_INJECT} && "
+            f"Run manually: {D.DIARIZE_INJECT} && "
             "wiz models download-diarization"
         )
 
@@ -2529,11 +2518,11 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
     if had_diarize:
         ui.phase("refreshing the diarize extra")
-        rc = _run_live(["pipx", "inject", D.PIPX_PACKAGE, _DIARIZE_REQUIREMENT])
+        rc = _run_live(["pipx", "inject", D.PIPX_PACKAGE, D.DIARIZE_REQUIREMENT])
         if rc != 0:
             ui.status(
-                f"pipx inject of {_DIARIZE_REQUIREMENT} failed (exit {rc}). Speaker detection may be "
-                f"stale — re-run: {_DIARIZE_INJECT}",
+                f"pipx inject of {D.DIARIZE_REQUIREMENT} failed (exit {rc}). Speaker detection may be "
+                f"stale — re-run: {D.DIARIZE_INJECT}",
                 kind="warn",
             )
         else:
@@ -2660,7 +2649,6 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
     sm.set_defaults(func=cmd_speakers_match)
 
-
     # config
     cp = sub.add_parser("config", aliases=["c"], help="View or edit configuration")
     csub = cp.add_subparsers(dest="config_command", required=True)
@@ -2681,8 +2669,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        for old, new in cfg.migrate_legacy_dirs():
-            ui.info(f"Copied your whiz data from {old} to {new} (the original is untouched).")
+        cfg.migrate_legacy_dirs(on_copied=lambda old, new: ui.info(
+            f"Copied your whiz data from {old} to {new} (the original is untouched)."))
         rc = args.func(args)
     except SystemExit:
         raise

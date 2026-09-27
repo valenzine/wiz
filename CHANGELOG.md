@@ -33,6 +33,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Upgrading
 
+- Diarization caches written before this release don't match anymore, because
+  the cache records where the models live and they moved to `~/.cache/wiz`.
+  The first run on each recording diarizes again and writes a new cache.
+- Running the old `whiz upgrade` installs `transcript-wiz` without the
+  diarization library. wiz offers to install it the first time a run needs it,
+  or install it yourself with `pipx inject transcript-wiz 'sherpa-onnx>=1.10'`.
+
 Install wiz with `pipx install git+https://github.com/valenzine/wiz.git`. pipx
 treats it as a new package (`transcript-wiz`), so the old `whiz` command stays until you run
 `pipx uninstall whiz`.

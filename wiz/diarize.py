@@ -26,7 +26,9 @@ _DIAR_CACHE_VERSION = 2
 # so wiz is distributed as transcript-wiz; the command and import stay "wiz".
 # pipx names its environment after this, so every pipx command needs it.
 PIPX_PACKAGE = "transcript-wiz"
-# The diarize extra's requirement. Keep in sync with
+# The diarize extra's requirement. The auto-setup installs exactly this, so
+# the automatic and manual paths agree; a bare `pip install sherpa-onnx` could
+# land an older version than the declared minimum. Keep in sync with
 # [project.optional-dependencies] diarize in pyproject.toml (a test checks).
 DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
 # The manual install command shown in hints. It injects the requirement

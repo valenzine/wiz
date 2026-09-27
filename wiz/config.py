@@ -9,31 +9,38 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 CONFIG_DIR = Path(os.environ.get("WIZ_CONFIG_DIR", Path.home() / ".config" / "wiz"))
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 CACHE_DIR = Path.home() / ".cache" / "wiz"
 
-# Where this state lived when the project was called whiz.
-LEGACY_CONFIG_DIR = Path.home() / ".config" / "whiz"
+# Where this state lived when the project was called whiz (honoring the
+# old WHIZ_CONFIG_DIR override, so a custom location is migrated too).
+LEGACY_CONFIG_DIR = Path(os.environ.get("WHIZ_CONFIG_DIR", Path.home() / ".config" / "whiz"))
 LEGACY_CACHE_DIR = Path.home() / ".cache" / "whiz"
 
 
-def migrate_legacy_dirs() -> list[tuple[Path, Path]]:
+def migrate_legacy_dirs(
+    on_copied: Callable[[Path, Path], None] | None = None,
+) -> list[tuple[Path, Path]]:
     """Copy the whiz-era config and cache dirs to their wiz locations, once.
 
     Copied, not moved: an older whiz install keeps working, and nothing is
-    lost if wiz is removed.
-    A destination that already exists is never touched. Each copy lands in
-    a temporary sibling first and is renamed into place, so an interrupted
-    copy is retried on the next run instead of leaving a half-copied dir.
+    lost if wiz is removed. A destination that already exists is never
+    touched. Each copy lands in a private temporary sibling and is renamed
+    into place, so an interrupted copy leaves nothing behind and two wiz
+    commands started together can't trip over each other: whichever
+    finishes second sees the destination already there and stands down.
     An explicit WIZ_CONFIG_DIR opts the config dir out of migration.
 
-    Returns the (old, new) pairs that were copied on this call.
+    ``on_copied(old, new)`` is called right after each successful copy, so a
+    later failure can't hide one that already happened. Returns the pairs
+    copied on this call.
     """
     pairs = [(LEGACY_CACHE_DIR, CACHE_DIR)]
     if "WIZ_CONFIG_DIR" not in os.environ:
@@ -42,18 +49,31 @@ def migrate_legacy_dirs() -> list[tuple[Path, Path]]:
     for old, new in pairs:
         if new.exists() or not old.is_dir():
             continue
-        tmp = new.with_name(new.name + ".migrating")
+        tmp = None
         try:
-            shutil.rmtree(tmp, ignore_errors=True)
             new.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(old, tmp, symlinks=True)
-            tmp.rename(new)
-        except OSError as e:
-            shutil.rmtree(tmp, ignore_errors=True)
+            tmp = Path(tempfile.mkdtemp(prefix=f".{new.name}.migrating-", dir=new.parent))
+            shutil.copytree(old, tmp, symlinks=True, dirs_exist_ok=True)
+            try:
+                tmp.rename(new)
+            except OSError:
+                if not new.is_dir():
+                    raise
+                # Another wiz command finished the same copy first.
+                shutil.rmtree(tmp, ignore_errors=True)
+                continue
+        except BaseException as e:
+            if tmp is not None:
+                shutil.rmtree(tmp, ignore_errors=True)
+            if not isinstance(e, OSError):
+                raise
             raise RuntimeError(
-                f"Could not copy {old} to {new}: {e}. Nothing was removed from {old}."
+                f"Could not copy {old} to {new}: {e}. Nothing was removed from {old}. "
+                f"To skip this copy, create {new} yourself (mkdir -p {new}) and run wiz again."
             ) from e
         migrated.append((old, new))
+        if on_copied is not None:
+            on_copied(old, new)
     return migrated
 
 

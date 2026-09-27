@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -56,15 +57,73 @@ def test_explicit_config_dir_opts_out_of_config_migration(dirs, monkeypatch):
     assert not new_cfg.exists()
 
 
-def test_leftover_from_interrupted_copy_is_replaced(dirs):
+def _temp_siblings(new):
+    return sorted(new.parent.glob(f".{new.name}.migrating-*"))
+
+
+def test_interrupted_copy_leaves_nothing_and_is_retried(dirs, monkeypatch):
     _, _, new_cfg, _ = dirs
-    stale = new_cfg.with_name("wiz.migrating")
-    stale.mkdir(parents=True)
-    (stale / "half-copied").write_text("x", encoding="utf-8")
+    real_copytree = shutil.copytree
+
+    def interrupted(src, dst, *args, **kwargs):
+        (dst / "half-copied").write_text("x", encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(shutil, "copytree", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        cfg.migrate_legacy_dirs()
+    assert not new_cfg.exists() and _temp_siblings(new_cfg) == []
+
+    monkeypatch.setattr(shutil, "copytree", real_copytree)
     cfg.migrate_legacy_dirs()
     assert (new_cfg / "speakers" / "Axel.json").exists()
     assert not (new_cfg / "half-copied").exists()
-    assert not stale.exists()
+
+
+def test_concurrent_run_that_finished_first_is_not_an_error(dirs, monkeypatch):
+    old_cfg, old_cache, new_cfg, new_cache = dirs
+    real_copytree = shutil.copytree
+
+    def other_wiz_wins(src, dst, *args, **kwargs):
+        real_copytree(src, dst, *args, **kwargs)
+        if src == old_cfg:  # another wiz command completes the same copy meanwhile
+            real_copytree(src, new_cfg)
+
+    monkeypatch.setattr(shutil, "copytree", other_wiz_wins)
+    assert cfg.migrate_legacy_dirs() == [(old_cache, new_cache)]
+    assert (new_cfg / "speakers" / "Axel.json").exists()
+    assert _temp_siblings(new_cfg) == []
+
+
+def test_notice_for_a_finished_copy_survives_a_later_failure(dirs, monkeypatch):
+    old_cfg, old_cache, new_cfg, _ = dirs
+    real_copytree = shutil.copytree
+    copied = []
+
+    def cache_fails(src, dst, *args, **kwargs):
+        if src == old_cache:
+            raise OSError("Permission denied")
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", cache_fails)
+    with pytest.raises(RuntimeError, match="Permission denied"):
+        cfg.migrate_legacy_dirs(on_copied=lambda old, new: copied.append((old, new)))
+    assert copied == [(old_cfg, new_cfg)]
+
+
+def test_old_whiz_config_dir_override_is_migrated(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "WHIZ_CONFIG_DIR": str(tmp_path / "custom-whiz")}
+    env.pop("WIZ_CONFIG_DIR", None)
+    out = subprocess.run(
+        [sys.executable, "-c", "from wiz import config; print(config.LEGACY_CONFIG_DIR)"],
+        env=env, capture_output=True, text=True, check=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    ).stdout.strip()
+    assert out == str(tmp_path / "custom-whiz")
 
 
 def test_failed_copy_is_loud_and_leaves_no_partial_dir(dirs, monkeypatch):
@@ -75,10 +134,10 @@ def test_failed_copy_is_loud_and_leaves_no_partial_dir(dirs, monkeypatch):
         raise OSError("No space left on device")
 
     monkeypatch.setattr(shutil, "copytree", disk_full)
-    with pytest.raises(RuntimeError, match="No space left.*Nothing was removed"):
+    with pytest.raises(RuntimeError, match="No space left.*Nothing was removed.*mkdir -p"):
         cfg.migrate_legacy_dirs()
     assert not new_cfg.exists()
-    assert not new_cfg.with_name("wiz.migrating").exists()
+    assert _temp_siblings(new_cfg) == []
     assert (old_cfg / "speakers" / "Axel.json").exists()
 
 
