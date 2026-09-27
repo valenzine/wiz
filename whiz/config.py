@@ -57,6 +57,9 @@ class Config:
     # user explicitly chooses a different execution setting.
     diarization_provider: str = "cpu"
     diarization_threads: int = 1
+    # Pyannote segmentation window shift, as a fraction of the window
+    # (0 < x <= 1). 0.1 is sherpa-onnx's own default; larger is faster.
+    diarization_window_shift: float = 0.1
     # Remembered answer to the one-time diarization auto-setup prompt.
     # None (unset) => ask on a TTY / proceed automatically when scripted;
     # true/false answers permanently for both. Written by the prompt and
@@ -190,6 +193,11 @@ def validate_diarization_execution_settings(config: Config) -> None:
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         raise RuntimeError(
             f"Invalid diarization_threads={threads!r}. Must be an integer >= 1"
+        )
+    shift = config.diarization_window_shift
+    if isinstance(shift, bool) or not isinstance(shift, (int, float)) or not 0 < shift <= 1:
+        raise RuntimeError(
+            f"Invalid diarization_window_shift={shift!r}. Must be a number with 0 < x <= 1"
         )
 
 

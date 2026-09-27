@@ -88,6 +88,16 @@ def _positive_diarization_threads(value: str) -> int:
     return threads
 
 
+def _diarization_window_shift(value: str) -> float:
+    try:
+        shift = float(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("must be a number with 0 < x <= 1") from e
+    if not 0 < shift <= 1:
+        raise argparse.ArgumentTypeError("must be a number with 0 < x <= 1")
+    return shift
+
+
 def _add_diarization_execution_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared sherpa-onnx execution overrides to a command parser."""
     parser.add_argument(
@@ -102,6 +112,13 @@ def _add_diarization_execution_arguments(parser: argparse.ArgumentParser) -> Non
         default=None,
         help="sherpa-onnx inference threads (default: config diarization_threads, 1)",
     )
+    parser.add_argument(
+        "--diarization-window-shift",
+        type=_diarization_window_shift,
+        default=None,
+        help="Pyannote segmentation window shift ratio, 0 < x <= 1; larger is faster "
+             "but coarser (default: config diarization_window_shift, 0.1)",
+    )
 
 
 def _apply_diarization_execution_overrides(
@@ -110,10 +127,13 @@ def _apply_diarization_execution_overrides(
     """Apply command overrides; sherpa entry points validate when used."""
     provider = getattr(args, "diarization_provider", None)
     threads = getattr(args, "diarization_threads", None)
+    window_shift = getattr(args, "diarization_window_shift", None)
     if provider is not None:
         config.diarization_provider = provider
     if threads is not None:
         config.diarization_threads = threads
+    if window_shift is not None:
+        config.diarization_window_shift = window_shift
 
 
 def _outputs_include(args: argparse.Namespace, config: cfg.Config, fmt: str) -> bool:
@@ -2457,6 +2477,10 @@ def _validate_config_value(key: str, value: object) -> None:
         isinstance(value, bool) or not isinstance(value, int) or value < 1
     ):
         raise SystemExit("Invalid diarization_threads. Must be an integer >= 1")
+    if key == "diarization_window_shift" and (
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 1
+    ):
+        raise SystemExit("Invalid diarization_window_shift. Must be a number with 0 < x <= 1")
 
 
 def cmd_config_set(args: argparse.Namespace) -> int:

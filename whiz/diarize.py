@@ -176,11 +176,13 @@ def load_diarization_cache(
     threshold: float = 0.5,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
+    window_shift_ratio: float = 0.1,
 ) -> list[DiarSegment] | None:
     """Load a cached diarization result if params AND inputs match.
 
     Returns the cached segments when the cache exists and was produced with
-    the same num_speakers/threshold AND the same source file and model files;
+    the same num_speakers/threshold/window_shift_ratio AND the same source
+    file and model files;
     otherwise returns None. The expensive part of diarization is embedding
     extraction, so reusing a matching cache skips the ~3 minute embedding
     pass and only needs the cheap merge step.
@@ -207,6 +209,11 @@ def load_diarization_cache(
     # Compare threshold with a small epsilon for float formatting round-trips.
     cached_thr = data.get("threshold")
     if cached_thr is None or abs(float(cached_thr) - threshold) > 1e-9:
+        return None
+    # The window shift changes segmentation output. Caches written before it
+    # was recorded lack the field and are a miss (one-time recompute).
+    cached_shift = data.get("window_shift_ratio")
+    if cached_shift is None or abs(float(cached_shift) - window_shift_ratio) > 1e-9:
         return None
     # Input identity (H1): the cache source (size + mtime) and both resolved
     # model paths must match what produced the cache. ``None`` model args
@@ -240,6 +247,7 @@ def _write_diarization_cache(
     threshold: float,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
+    window_shift_ratio: float = 0.1,
 ) -> Path:
     """Persist the diarization result so later `whiz merge` runs can reuse it.
 
@@ -259,6 +267,7 @@ def _write_diarization_cache(
         "version": _DIAR_CACHE_VERSION,
         "num_speakers": num_speakers,
         "threshold": threshold,
+        "window_shift_ratio": window_shift_ratio,
         "wav_size": wav_size,
         "wav_mtime": wav_mtime,
         "seg_model": str(seg_model) if seg_model else None,
@@ -286,7 +295,8 @@ def run_diarization(
     and prints what would run.
 
     When ``use_cache`` is True (the default) and a matching cache exists
-    for the cache source + (num_speakers, threshold) + resolved model files,
+    for the cache source + (num_speakers, threshold, window shift) + resolved
+    model files,
     the embedding pass is skipped and the cached segments are returned. A
     fresh result is always written back to the cache after a real run.
 
@@ -311,6 +321,7 @@ def run_diarization(
         cached = load_diarization_cache(
             cache_input, num_speakers=num_speakers, threshold=threshold,
             seg_model=seg_model, emb_model=emb_model,
+            window_shift_ratio=config.diarization_window_shift,
         )
         if cached is not None:
             from whiz import ui
@@ -329,6 +340,7 @@ def run_diarization(
         print(f"  cluster_threshold:  {threshold}")
         print(f"  requested provider: {config.diarization_provider}")
         print(f"  threads:            {config.diarization_threads}")
+        print(f"  window shift ratio: {config.diarization_window_shift}")
         print(f"  wav:                {wav}")
         return []
 
@@ -346,7 +358,21 @@ def run_diarization(
     # Which segmentation variant is in use — model.onnx (unquantized) or
     # model.int8.onnx — matters for quality (NS-15); make it visible.
     ui.muted(f"  segmentation model: {seg_model.name}")
-    seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
+    window_shift = config.diarization_window_shift
+    if window_shift == 0.1:
+        # sherpa-onnx's own default; keep the call that works on every
+        # version whiz supports (the kwarg arrived in sherpa-onnx 1.13.6).
+        seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
+    else:
+        try:
+            seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(seg_model),
+                window_shift_ratio=window_shift,
+            )
+        except TypeError as e:
+            raise RuntimeError(
+                f"diarization_window_shift={window_shift} requires sherpa-onnx >= 1.13.6: {e}"
+            ) from e
     try:
         segmentation = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=seg_cfg,
@@ -403,6 +429,7 @@ def run_diarization(
     ui.muted("Running speaker diarization ...")
     ui.muted(f"  requested provider: {config.diarization_provider}")
     ui.muted(f"  threads: {config.diarization_threads}")
+    ui.muted(f"  window shift ratio: {config.diarization_window_shift}")
     try:
         result = sd.process(samples, callback=_progress_callback).sort_by_start_time()
     except Exception as e:
@@ -421,6 +448,7 @@ def run_diarization(
     cache_path = _write_diarization_cache(
         cache_input, segments, num_speakers, threshold,
         seg_model=seg_model, emb_model=emb_model,
+        window_shift_ratio=config.diarization_window_shift,
     )
     ui.muted(f"Saved diarization cache: {cache_path}")
     return segments
