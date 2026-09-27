@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -111,19 +112,53 @@ def test_notice_for_a_finished_copy_survives_a_later_failure(dirs, monkeypatch):
     assert copied == [(old_cfg, new_cfg)]
 
 
-def test_old_whiz_config_dir_override_is_migrated(tmp_path):
+def _config_dir_with_env(**env_overrides):
     import os
     import subprocess
     import sys
 
-    env = {**os.environ, "WHIZ_CONFIG_DIR": str(tmp_path / "custom-whiz")}
-    env.pop("WIZ_CONFIG_DIR", None)
-    out = subprocess.run(
-        [sys.executable, "-c", "from wiz import config; print(config.LEGACY_CONFIG_DIR)"],
+    env = {k: v for k, v in os.environ.items() if k not in ("WIZ_CONFIG_DIR", "WHIZ_CONFIG_DIR")}
+    env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, "-c", "from wiz import config; print(config.CONFIG_DIR)"],
         env=env, capture_output=True, text=True, check=True,
         cwd=Path(__file__).resolve().parent.parent,
     ).stdout.strip()
-    assert out == str(tmp_path / "custom-whiz")
+
+
+def test_explicit_config_dir_is_used_as_is(tmp_path):
+    assert _config_dir_with_env(WIZ_CONFIG_DIR=str(tmp_path / "a")) == str(tmp_path / "a")
+    # The whiz-era variable keeps a custom location working...
+    assert _config_dir_with_env(WHIZ_CONFIG_DIR=str(tmp_path / "b")) == str(tmp_path / "b")
+    # ...but the new name wins when both are set.
+    assert _config_dir_with_env(
+        WIZ_CONFIG_DIR=str(tmp_path / "a"), WHIZ_CONFIG_DIR=str(tmp_path / "b"),
+    ) == str(tmp_path / "a")
+
+
+def test_old_config_dir_variable_opts_out_of_config_migration(dirs, monkeypatch):
+    old_cfg, old_cache, new_cfg, new_cache = dirs
+    monkeypatch.setenv("WHIZ_CONFIG_DIR", str(old_cfg))
+    assert cfg.migrate_legacy_dirs() == [(old_cache, new_cache)]
+    assert not new_cfg.exists()
+
+
+def test_temp_copy_of_a_killed_process_is_cleaned_up(dirs):
+    import subprocess
+    import sys
+
+    _, _, new_cfg, _ = dirs
+    new_cfg.parent.mkdir(parents=True, exist_ok=True)
+    dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    killed = new_cfg.parent / f".wiz.migrating-{dead}-abc"
+    running = new_cfg.parent / f".wiz.migrating-{os.getpid()}-def"
+    for d in (killed, running):
+        (d / "speakers").mkdir(parents=True)
+    cfg.migrate_legacy_dirs()
+    assert not killed.exists()          # its process is gone
+    assert running.exists()             # a copy still in progress is left alone
+    assert (new_cfg / "speakers" / "Axel.json").exists()
 
 
 def test_failed_copy_is_loud_and_leaves_no_partial_dir(dirs, monkeypatch):

@@ -15,14 +15,33 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Callable
 
-CONFIG_DIR = Path(os.environ.get("WIZ_CONFIG_DIR", Path.home() / ".config" / "wiz"))
+# An explicitly chosen config dir is used as-is, and never migrated. The
+# whiz-era WHIZ_CONFIG_DIR still counts, so a custom location keeps working.
+_EXPLICIT_CONFIG_DIR = os.environ.get("WIZ_CONFIG_DIR") or os.environ.get("WHIZ_CONFIG_DIR")
+CONFIG_DIR = Path(_EXPLICIT_CONFIG_DIR or Path.home() / ".config" / "wiz")
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 CACHE_DIR = Path.home() / ".cache" / "wiz"
 
-# Where this state lived when the project was called whiz (honoring the
-# old WHIZ_CONFIG_DIR override, so a custom location is migrated too).
-LEGACY_CONFIG_DIR = Path(os.environ.get("WHIZ_CONFIG_DIR", Path.home() / ".config" / "whiz"))
+# Where this state lived when the project was called whiz.
+LEGACY_CONFIG_DIR = Path.home() / ".config" / "whiz"
 LEGACY_CACHE_DIR = Path.home() / ".cache" / "whiz"
+
+
+def _remove_dead_temp_copies(new: Path) -> None:
+    """Delete ``.<name>.migrating-<pid>-*`` dirs whose process is gone."""
+    if not new.parent.is_dir():
+        return
+    for leftover in new.parent.glob(f".{new.name}.migrating-*"):
+        try:
+            pid = int(leftover.name.split("-")[1])
+        except (IndexError, ValueError):
+            continue
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            shutil.rmtree(leftover, ignore_errors=True)
+        except PermissionError:
+            pass  # alive, owned by someone else
 
 
 def migrate_legacy_dirs(
@@ -36,23 +55,27 @@ def migrate_legacy_dirs(
     into place, so an interrupted copy leaves nothing behind and two wiz
     commands started together can't trip over each other: whichever
     finishes second sees the destination already there and stands down.
-    An explicit WIZ_CONFIG_DIR opts the config dir out of migration.
+    An explicit WIZ_CONFIG_DIR (or the old WHIZ_CONFIG_DIR) opts the config
+    dir out of migration. A temp copy left by a killed process (no Python
+    exception, so no cleanup) is removed by the next run; the process id in
+    its name tells a dead copy from one still running.
 
     ``on_copied(old, new)`` is called right after each successful copy, so a
     later failure can't hide one that already happened. Returns the pairs
     copied on this call.
     """
     pairs = [(LEGACY_CACHE_DIR, CACHE_DIR)]
-    if "WIZ_CONFIG_DIR" not in os.environ:
+    if not (os.environ.get("WIZ_CONFIG_DIR") or os.environ.get("WHIZ_CONFIG_DIR")):
         pairs.insert(0, (LEGACY_CONFIG_DIR, CONFIG_DIR))
     migrated = []
     for old, new in pairs:
+        _remove_dead_temp_copies(new)
         if new.exists() or not old.is_dir():
             continue
         tmp = None
         try:
             new.parent.mkdir(parents=True, exist_ok=True)
-            tmp = Path(tempfile.mkdtemp(prefix=f".{new.name}.migrating-", dir=new.parent))
+            tmp = Path(tempfile.mkdtemp(prefix=f".{new.name}.migrating-{os.getpid()}-", dir=new.parent))
             shutil.copytree(old, tmp, symlinks=True, dirs_exist_ok=True)
             try:
                 tmp.rename(new)

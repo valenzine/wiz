@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format is based on
 
 - Renamed to **wiz**: the command is `wiz` (there is no `whiz` alias), the Python
   package is `wiz`, settings live in `~/.config/wiz` (override with
-  `WIZ_CONFIG_DIR`, formerly `WHIZ_CONFIG_DIR`) and diarization models in
+  `WIZ_CONFIG_DIR`; the old `WHIZ_CONFIG_DIR` still works, and a custom
+  location set either way is used as-is, not copied) and diarization models in
   `~/.cache/wiz/diarization`.
 - The package is published as `transcript-wiz`, because `wiz` is taken on PyPI
   by an unrelated project. pipx lists it under that name, and `pipx inject` /
