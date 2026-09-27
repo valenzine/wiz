@@ -189,9 +189,9 @@ def test_lock_held_by_another_process_excludes_us(tmp_path):
         # only makes this wait longer; it can't make a working lock fail it.)
         assert not acquired.wait(0.2)
     finally:
-        holder.stdin.write("release\n")
-        holder.stdin.flush()
-        holder.wait()
+        # communicate() closes the pipes and tolerates a child that already
+        # died, so a crash there can't mask the real assertion error.
+        holder.communicate("release\n")
     waiter.join(5)
     assert acquired.is_set()  # and it gets the lock once the holder is gone
 
