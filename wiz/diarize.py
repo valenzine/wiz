@@ -30,7 +30,7 @@ PIPX_PACKAGE = "transcript-wiz"
 # the automatic and manual paths agree; a bare `pip install sherpa-onnx` could
 # land an older version than the declared minimum. Keep in sync with
 # [project.optional-dependencies] diarize in pyproject.toml (a test checks).
-DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
+DIARIZE_REQUIREMENT = "sherpa-onnx>=1.13.6"  # first with window_shift_ratio
 # The manual install command shown in hints. It injects the requirement
 # itself rather than 'transcript-wiz[diarize]', so pip never resolves a
 # package name on PyPI for it.
@@ -191,7 +191,7 @@ def load_diarization_cache(
     threshold: float = 0.5,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
-    window_shift_ratio: float = 0.1,
+    window_shift_ratio: float = cfg.DEFAULT_DIARIZATION_WINDOW_SHIFT,
 ) -> list[DiarSegment] | None:
     """Load a cached diarization result if params AND inputs match.
 
@@ -262,7 +262,7 @@ def _write_diarization_cache(
     threshold: float,
     seg_model: Path | None = None,
     emb_model: Path | None = None,
-    window_shift_ratio: float = 0.1,
+    window_shift_ratio: float = cfg.DEFAULT_DIARIZATION_WINDOW_SHIFT,
 ) -> Path:
     """Persist the diarization result so later `wiz merge` runs can reuse it.
 
@@ -373,21 +373,16 @@ def run_diarization(
     # Which segmentation variant is in use — model.onnx (unquantized) or
     # model.int8.onnx — matters for quality (NS-15); make it visible.
     ui.muted(f"  segmentation model: {seg_model.name}")
-    window_shift = config.diarization_window_shift
-    if window_shift == 0.1:
-        # sherpa-onnx's own default; keep the call that works on every
-        # version wiz supports (the kwarg arrived in sherpa-onnx 1.13.6).
-        seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
-    else:
-        try:
-            seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
-                model=str(seg_model),
-                window_shift_ratio=window_shift,
-            )
-        except TypeError as e:
-            raise RuntimeError(
-                f"diarization_window_shift={window_shift} requires sherpa-onnx >= 1.13.6: {e}"
-            ) from e
+    try:
+        seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+            model=str(seg_model),
+            window_shift_ratio=config.diarization_window_shift,
+        )
+    except TypeError as e:  # an environment still on sherpa-onnx < 1.13.6
+        raise RuntimeError(
+            f"This sherpa-onnx is too old (window shift needs 1.13.6 or newer). "
+            f"Upgrade it with: {DIARIZE_INJECT}  ({e})"
+        ) from e
     try:
         segmentation = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=seg_cfg,

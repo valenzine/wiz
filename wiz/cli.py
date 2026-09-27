@@ -108,7 +108,7 @@ def _add_diarization_execution_arguments(parser: argparse.ArgumentParser) -> Non
         type=_diarization_window_shift,
         default=None,
         help="Pyannote segmentation window shift ratio, 0 < x <= 1; larger is faster "
-             "but coarser (default: config diarization_window_shift, 0.1)",
+             "but coarser (default: config diarization_window_shift, 0.2)",
     )
 
 
