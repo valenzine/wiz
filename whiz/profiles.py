@@ -31,12 +31,19 @@ from __future__ import annotations
 import json
 import math
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from whiz import config as cfg
-from whiz.diarize import DiarSegment, _import_sherpa, _read_wav_pcm, find_embedding_model
+from whiz.diarize import (
+    DiarSegment,
+    DiarizationProviderError,
+    _import_sherpa,
+    _read_wav_pcm,
+    find_embedding_model,
+)
 
 
 def profiles_dir() -> Path:
@@ -227,6 +234,8 @@ def compute_speaker_embeddings(
     if not segments:
         return {}
 
+    cfg.validate_diarization_execution_settings(config)
+
     emb_model = find_embedding_model(config)
     if emb_model is None:
         raise RuntimeError(
@@ -235,9 +244,33 @@ def compute_speaker_embeddings(
 
     sherpa_onnx = _import_sherpa()
 
-    extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
-        sherpa_onnx.SpeakerEmbeddingExtractorConfig(str(emb_model))
-    )
+    from whiz import ui
+    ui.muted("Computing speaker profile embeddings ...")
+    ui.muted(f"  requested provider: {config.diarization_provider}")
+    ui.muted(f"  threads: {config.diarization_threads}")
+    if config.diarization_provider != "cpu":
+        ui.status(
+            f"Requested speaker-profile provider: {config.diarization_provider}. "
+            "sherpa-onnx does not expose the native provider selected after "
+            "initialization; check its stderr for any provider fallback.",
+            kind="warn",
+        )
+    started = time.monotonic()
+    try:
+        extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
+            sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                str(emb_model),
+                num_threads=config.diarization_threads,
+                provider=config.diarization_provider,
+            )
+        )
+    except Exception as e:
+        if config.diarization_provider != "cpu":
+            raise DiarizationProviderError(
+                "Could not initialize requested sherpa-onnx provider "
+                f"{config.diarization_provider!r} for speaker profile embeddings: {e}"
+            ) from e
+        raise
     dim = extractor.dim
     sample_rate = 16000  # whiz extracts 16 kHz mono WAV
 
@@ -278,6 +311,8 @@ def compute_speaker_embeddings(
                 off += chunk
         if vecs:
             out[spk] = _average_vectors(vecs, dim)
+    elapsed = int(time.monotonic() - started)
+    ui.muted(f"Speaker profile embeddings completed in {elapsed // 60}:{elapsed % 60:02d}.")
     return out
 
 

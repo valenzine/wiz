@@ -78,6 +78,44 @@ def _auto_threads() -> int:
     return min(8, os.cpu_count() or 4)
 
 
+def _positive_diarization_threads(value: str) -> int:
+    try:
+        threads = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("must be an integer >= 1") from e
+    if threads < 1:
+        raise argparse.ArgumentTypeError("must be an integer >= 1")
+    return threads
+
+
+def _add_diarization_execution_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add shared sherpa-onnx execution overrides to a command parser."""
+    parser.add_argument(
+        "--diarization-provider",
+        choices=sorted(cfg.DIARIZATION_PROVIDERS),
+        default=None,
+        help="sherpa-onnx provider (default: config diarization_provider, cpu)",
+    )
+    parser.add_argument(
+        "--diarization-threads",
+        type=_positive_diarization_threads,
+        default=None,
+        help="sherpa-onnx inference threads (default: config diarization_threads, 1)",
+    )
+
+
+def _apply_diarization_execution_overrides(
+    args: argparse.Namespace, config: cfg.Config,
+) -> None:
+    """Apply command overrides; sherpa entry points validate when used."""
+    provider = getattr(args, "diarization_provider", None)
+    threads = getattr(args, "diarization_threads", None)
+    if provider is not None:
+        config.diarization_provider = provider
+    if threads is not None:
+        config.diarization_threads = threads
+
+
 def _outputs_include(args: argparse.Namespace, config: cfg.Config, fmt: str) -> bool:
     """True if ``fmt`` is in the requested/configured outputs (comma-split)."""
     raw = args.outputs if args.outputs else ",".join(config.outputs)
@@ -634,6 +672,13 @@ def _remove_intermediate_audio(path: Path, source: Path) -> None:
         pass
 
 
+def _diarization_cache_kwargs(wav: Path, source: Path) -> dict[str, Path]:
+    """Key normalized audio on its stable source, not the disposable WAV."""
+    if wav != source and not aud.needs_extraction(source):
+        return {"cache_source": source}
+    return {}
+
+
 def _find_whisper_json(of_base: Path, wav: Path, of_passed: bool) -> Path | None:
     """Locate the whisper-cli JSON output.
 
@@ -1094,7 +1139,10 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
     num_sp = args.speakers if args.speakers else 0
     thr = args.cluster_threshold if args.cluster_threshold is not None else config.cluster_threshold
     try:
-        diar_segments = D.run_diarization(wav, config, num_speakers=num_sp, threshold=thr)
+        diar_segments = D.run_diarization(
+            wav, config, num_speakers=num_sp, threshold=thr,
+            **_diarization_cache_kwargs(wav, Path(args.file).expanduser()),
+        )
     except D.DiarizationUnavailable as e:
         # M2 (wave-1 audit): setup/unavailability problems arrive as the
         # TYPED DiarizationUnavailable (missing package / models / failed
@@ -1137,6 +1185,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
 
 def cmd_transcribe(args: argparse.Namespace) -> int:
     config = cfg.load()
+    _apply_diarization_execution_overrides(args, config)
     prepared = _build_transcribe_args(args, config)
     _cmd, _model, wav, in_path, keep_wav, *_rest = prepared
     try:
@@ -1838,6 +1887,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
 def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path]]) -> int:
     config = cfg.load()
+    _apply_diarization_execution_overrides(args, config)
     in_path = Path(args.file).expanduser()
     if not in_path.exists():
         raise SystemExit(f"Input file not found: {in_path}")
@@ -1965,7 +2015,10 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     if speakers_requested:
         try:
             ui.phase("diarizing")
-            diar_segments = D.run_diarization(wav, config, num_speakers=num_sp, threshold=thr)
+            diar_segments = D.run_diarization(
+                wav, config, num_speakers=num_sp, threshold=thr,
+                **_diarization_cache_kwargs(wav, in_path),
+            )
         except D.DiarizationUnavailable as e:
             # M2 (wave-1 audit): setup/unavailability problems arrive as the
             # typed DiarizationUnavailable (missing package / models /
@@ -2230,6 +2283,7 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
     first (consent prompt on a TTY; opt out with --no-auto-diarization-setup).
     """
     config = cfg.load()
+    _apply_diarization_execution_overrides(args, config)
     in_path = Path(args.file).expanduser()
     if not in_path.exists():
         raise SystemExit(f"Input file not found: {in_path}")
@@ -2276,7 +2330,10 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
 
     try:
         ui.phase("diarizing")
-        diar_segments = D.run_diarization(wav, config, num_speakers=num_sp, threshold=thr)
+        diar_segments = D.run_diarization(
+            wav, config, num_speakers=num_sp, threshold=thr,
+            **_diarization_cache_kwargs(wav, in_path),
+        )
         if not diar_segments:
             raise SystemExit("Diarization produced no segments.")
 
@@ -2384,7 +2441,9 @@ def _coerce(value: str, field_type: type):
 # Enum-like config fields with a fixed set of allowed values. Shared by both
 # Enum-like config fields, validated wherever they are set so a typo cannot
 # silently degrade behaviour.
-_CONFIG_ENUM_VALUES: dict[str, set[str]] = {}
+_CONFIG_ENUM_VALUES: dict[str, set[str]] = {
+    "diarization_provider": set(cfg.DIARIZATION_PROVIDERS),
+}
 
 
 def _validate_config_value(key: str, value: object) -> None:
@@ -2394,6 +2453,10 @@ def _validate_config_value(key: str, value: object) -> None:
         raise SystemExit(
             f"Invalid {key}={value!r}. Must be one of: {', '.join(sorted(allowed))}"
         )
+    if key == "diarization_threads" and (
+        isinstance(value, bool) or not isinstance(value, int) or value < 1
+    ):
+        raise SystemExit("Invalid diarization_threads. Must be an integer >= 1")
 
 
 def cmd_config_set(args: argparse.Namespace) -> int:
@@ -2512,6 +2575,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Enable speaker diarization via sherpa-onnx. Optional integer = known speaker count; omit = auto-detect. Auto-enabled for video inputs (see --no-speakers)")
     t.add_argument("--no-speakers", dest="no_speakers", action="store_true", help="Disable the auto-enabled speaker diarization for video inputs (opt out)")
     t.add_argument("--cluster-threshold", type=float, default=None, help="Diarization clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
+    _add_diarization_execution_arguments(t)
     t.add_argument("--name-speakers", action="store_true", help="Interactively prompt to name each detected speaker. Auto-enabled when diarization runs (see --no-name-speakers)")
     t.add_argument("--no-name-speakers", dest="no_name_speakers", action="store_true", help="Disable the auto-enabled interactive speaker-naming prompt (opt out)")
     t.add_argument("--speakers-names", dest="speakers_names", nargs="+", default=None, help="Non-interactive speaker names assigned by total talk time (most talkative first), e.g. --speakers-names Alice,Bob,Carol,Dave")
@@ -2537,6 +2601,7 @@ def build_parser() -> argparse.ArgumentParser:
     mg.add_argument("--no-speakers", dest="no_speakers", action="store_true", help="Disable the auto-enabled speaker diarization for video inputs (opt out)")
     mg.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
     mg.add_argument("--cluster-threshold", type=float, default=None, help="Clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
+    _add_diarization_execution_arguments(mg)
     mg.add_argument("--name-speakers", action="store_true", help="Interactively prompt to name each detected speaker. Auto-enabled when diarization runs (see --no-name-speakers)")
     mg.add_argument("--no-name-speakers", dest="no_name_speakers", action="store_true", help="Disable the auto-enabled interactive speaker-naming prompt (opt out)")
     mg.add_argument("--speakers-names", dest="speakers_names", nargs="+", default=None, help="Non-interactive speaker names assigned by total talk time (most talkative first), e.g. --speakers-names Alice,Bob,Carol,Dave")
@@ -2589,6 +2654,7 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("file", help="Input audio/video file")
     sm.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Known speaker count; omit = auto-detect")
     sm.add_argument("--cluster-threshold", type=float, default=None, help="Clustering threshold when auto-detecting (default 0.9)")
+    _add_diarization_execution_arguments(sm)
     sm.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
     sm.set_defaults(func=cmd_speakers_match)
 
