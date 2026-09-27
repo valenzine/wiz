@@ -2094,6 +2094,28 @@ def test_transcribe_chained_analyze_honors_int_exit_code(tmp_path, monkeypatch, 
     assert "Chained analysis failed" not in flat
 
 
+def test_transcribe_chained_analyze_runs_after_unfulfilled_speakers_request(tmp_path, monkeypatch):
+    """An unavailable explicit diarization request remains nonzero, but does
+    not skip separately requested analysis when fallback text is available."""
+    audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
+    monkeypatch.setattr(cli.D, "run_diarization", _raise_sherpa_missing)
+    analyzed: list[str] = []
+
+    def _analyze(args):
+        assert "Speaker" in (tmp_path / "meeting.speakers.txt").read_text(encoding="utf-8")
+        analyzed.append(args.file)
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_analyze", _analyze)
+    args = _transcribe_args(audio, outputs="html", speakers=1)
+    args.analyze = True
+
+    rc = cli.cmd_transcribe(args)
+
+    assert rc == 1
+    assert analyzed == [str(audio)]
+
+
 def test_consent_non_bool_string_is_not_authoritative(tmp_path, monkeypatch):
     """L-c: a hand-edited `auto_diarization_setup = "false"` string is not a
     stored answer (it is truthy and used to read as consent) — it falls

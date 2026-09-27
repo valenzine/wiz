@@ -1440,13 +1440,13 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
 
     # An explicit --speakers request is unfulfilled when no real diarization
     # labels exist, even if generic fallback artifacts were written or prior
-    # labeled artifacts were kept. A whisper failure keeps its own rc.
-    if (
+    # labeled artifacts were kept. Keep the failure status after a separately
+    # requested chained analysis has had a chance to use those artifacts.
+    unfulfilled_speakers_request = (
         args.speakers is not None
         and rc == 0
         and not diar_segments
-    ):
-        return 1
+    )
 
     # Optional: chain into AI analysis after a successful transcription.
     # Runs the same auto-detect path as `wiz analyze <file>` so the user gets
@@ -1495,7 +1495,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
             )
             return analyze_rc
 
-    return rc
+    return 1 if unfulfilled_speakers_request else rc
 
 
 # ---------- models ----------
