@@ -1,4 +1,4 @@
-"""Tests for whiz.cli helpers — model-picker recommendation heuristic,
+"""Tests for wiz.cli helpers — model-picker recommendation heuristic,
 vision resolution, output fallbacks (HTML without diarization), and the
 proactive diarization auto-setup (user decision, 2026-09-05).
 
@@ -18,8 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import cli
-from whiz.diarize import DiarSegment
+from wiz import cli
+from wiz.diarize import DiarSegment
 
 
 def test_recommend_model_empty_returns_zero():
@@ -255,7 +255,7 @@ def test_transcribe_html_fallback_when_diarization_unavailable(tmp_path, monkeyp
     assert ">Speaker<" in content  # generic label, not 'Speaker A'
     assert "Speaker A" not in content
     # The labeled SRT is NOT faked — it needs real diarization. (The
-    # generic-label .speakers.txt IS written on this audio run: `whiz analyze`
+    # generic-label .speakers.txt IS written on this audio run: `wiz analyze`
     # needs a frames manifest or a .speakers.txt to find a transcript.)
     assert not (tmp_path / "meeting.speakers.srt").exists()
     txt = (tmp_path / "meeting.speakers.txt").read_text(encoding="utf-8")
@@ -324,7 +324,7 @@ def test_transcribe_html_and_frames_fallback_for_video(tmp_path, monkeypatch, ca
     assert "diarization unavailable" in err
     assert "Falling back to generic 'Speaker' labels" in err
     # Labeled outputs are not faked; video runs have a frames manifest, so
-    # no generic-label .speakers.txt is needed for `whiz analyze`.
+    # no generic-label .speakers.txt is needed for `wiz analyze`.
     assert not (tmp_path / "recording.speakers.srt").exists()
     assert not (tmp_path / "recording.speakers.txt").exists()
 
@@ -768,7 +768,7 @@ def _stub_setup_ready(monkeypatch):
 
 
 def test_merge_html_fallback_when_diarization_unavailable(tmp_path, monkeypatch, capsys):
-    """whiz merge --speakers --outputs html with sherpa-onnx missing degrades
+    """wiz merge --speakers --outputs html with sherpa-onnx missing degrades
     to a generic-label HTML transcript instead of exiting."""
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake audio")
@@ -790,7 +790,7 @@ def test_merge_html_fallback_when_diarization_unavailable(tmp_path, monkeypatch,
     # — a file this code path never writes, so it guarded nothing).
     assert not (tmp_path / "meeting.m4a.speakers.srt").exists()
     # Audio fallback also writes a generic-label .speakers.txt so
-    # `whiz analyze` finds a transcript.
+    # `wiz analyze` finds a transcript.
     txt = (tmp_path / "meeting.m4a.speakers.txt").read_text(encoding="utf-8")
     assert "Speaker (00:00:00):" in txt
     assert "diarization unavailable" in capsys.readouterr().err
@@ -836,7 +836,7 @@ def test_transcribe_diarized_success_writes_labeled_outputs(tmp_path, monkeypatc
 
 
 def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
-    """whiz merge happy path: diarization succeeds -> labeled srt/txt/html
+    """wiz merge happy path: diarization succeeds -> labeled srt/txt/html
     written under the JSON stem with letterized labels, no note."""
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake audio")
@@ -1107,7 +1107,7 @@ def test_merge_fallback_never_clobbers_existing_named_outputs(tmp_path, monkeypa
     """Same no-clobber contract on the merge path. The run writes nothing
     (both artifacts were kept) — which is a no-op SUCCESS, not a failure:
     the named outputs were correctly preserved, and an rc=1 here would
-    false-alarm `whiz merge ... || alert` wrappers on identical re-runs
+    false-alarm `wiz merge ... || alert` wrappers on identical re-runs
     (review follow-up). Warnings explain the keeps."""
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake audio")
@@ -1194,7 +1194,7 @@ def test_transcribe_fallback_mixed_named_html_kept_degraded_txt_overwritten(tmp_
     """Per-file decision (review follow-up): an earlier diarized run left a
     NAMED html but a degraded txt on disk; the fallback must keep the
     named file and still refresh the degraded one — the guard protects
-    speaker names, not whiz's own fallback output."""
+    speaker names, not wiz's own fallback output."""
     audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
     monkeypatch.setattr(cli.D, "run_diarization", _raise_sherpa_missing)
     named_html = tmp_path / "meeting.speakers.html"
@@ -1305,7 +1305,7 @@ def test_merge_sherpa_missing_does_not_double_warn(tmp_path, monkeypatch, capsys
 # ---------- proactive diarization auto-setup (user decision, 2026-09-05) ----------
 #
 # Policy: when diarization is about to run — auto-enabled for video or
-# explicitly requested — whiz performs the one-time setup itself (pip
+# explicitly requested — wiz performs the one-time setup itself (pip
 # install sherpa-onnx + ~90 MB model download) instead of degrading; the
 # fallbacks above remain only as the safety net for a failed setup or
 # --no-auto-diarization-setup. These tests run the REAL setup helpers by
@@ -1431,7 +1431,7 @@ def test_install_sherpa_onnx_targets_running_venv_and_reports_progress(monkeypat
     assert cli._install_sherpa_onnx() is True
     # The spec the diarize extra declares, not a bare package name (review
     # round 3): a bare `pip install sherpa-onnx` could land an older version
-    # than the documented manual path (`pipx inject whiz 'whiz[diarize]'`).
+    # than the documented manual path (`pipx inject wiz 'wiz[diarize]'`).
     assert seen["cmd"] == [sys.executable, "-m", "pip", "install", cli._DIARIZE_REQUIREMENT]
     assert ">=" in cli._DIARIZE_REQUIREMENT
     err = capsys.readouterr().err
@@ -1459,7 +1459,7 @@ def test_ensure_diarization_ready_install_failure_returns_false(monkeypatch, cap
     assert cli._ensure_diarization_ready(cli.cfg.Config()) is False
     err = capsys.readouterr().err
     assert "pip install sherpa-onnx failed" in err
-    assert "pipx inject whiz 'whiz[diarize]'" in err
+    assert "pipx inject wiz 'wiz[diarize]'" in err
 
 
 def _fresh_machine_stubs(monkeypatch, events):
@@ -1488,7 +1488,7 @@ def _fresh_machine_stubs(monkeypatch, events):
 
 
 def test_transcribe_auto_diarization_setup_success_writes_speakers_html(tmp_path, monkeypatch, capsys):
-    """The headline behavior: `whiz transcribe recording.mov --outputs html`
+    """The headline behavior: `wiz transcribe recording.mov --outputs html`
     on a fresh machine just works — the setup runs (real
     _build_transcribe_args, real _ensure_diarization_ready), diarization
     produces real labels, and the old quiet auto-skip hint never appears."""
@@ -1552,7 +1552,7 @@ def test_transcribe_auto_diarization_skips_after_failed_setup(tmp_path, monkeypa
 
 def test_merge_auto_diarization_setup_success_writes_labeled_outputs(tmp_path, monkeypatch):
     """cmd_merge's half of the wiring: explicit --speakers triggers the
-    setup, and labeled outputs land afterwards — the first `whiz merge`
+    setup, and labeled outputs land afterwards — the first `wiz merge`
     on a fresh machine just works."""
     events: list[str] = []
     _fresh_machine_stubs(monkeypatch, events)
@@ -1602,7 +1602,7 @@ def test_merge_zero_segments_message_is_actionable(tmp_path, monkeypatch, capsys
 
 
 def test_speakers_match_setup_failure_exits_with_hint(tmp_path, monkeypatch):
-    """`whiz speakers match` needs diarization by definition: when the
+    """`wiz speakers match` needs diarization by definition: when the
     setup cannot make it work, exit loudly with the manual command —
     there is no degraded path to fall back to here."""
     audio = tmp_path / "meeting.m4a"
@@ -1612,7 +1612,7 @@ def test_speakers_match_setup_failure_exits_with_hint(tmp_path, monkeypatch):
 
     args = SimpleNamespace(file=str(audio), speakers=1, cluster_threshold=None,
                            no_auto_diarization_setup=False)
-    with pytest.raises(SystemExit, match="pipx inject whiz 'whiz\\[diarize\\]'"):
+    with pytest.raises(SystemExit, match="pipx inject wiz 'wiz\\[diarize\\]'"):
         cli.cmd_speakers_match(args)
 
 
@@ -1795,12 +1795,12 @@ def test_consent_tty_no_persists_false_with_way_back_hint(tmp_path, monkeypatch)
     assert "auto_diarization_setup = false" in saved
     # Wrap-insensitive: rich wraps the long hint lines at console width.
     flat = " ".join("".join(err.buf).split())
-    assert "pipx inject whiz 'whiz[diarize]'" in flat  # the manual path
-    assert "whiz config set auto_diarization_setup=true" in flat  # the way back
+    assert "pipx inject wiz 'wiz[diarize]'" in flat  # the manual path
+    assert "wiz config set auto_diarization_setup=true" in flat  # the way back
 
 
 def test_consent_tty_eof_declines_and_persists_false(tmp_path, monkeypatch):
-    """Piped stdin under a tty stderr (whiz t rec.mov < /dev/null): EOF is a
+    """Piped stdin under a tty stderr (wiz t rec.mov < /dev/null): EOF is a
     decline, not a crash — and it persists like any other answer."""
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(cli.cfg, "CONFIG_PATH", tmp_path / "config.toml")
@@ -1910,7 +1910,7 @@ def test_ensure_diarization_ready_tty_consent_no_skips_setup(tmp_path, monkeypat
 
 
 def test_config_set_auto_diarization_setup_roundtrip(tmp_path, monkeypatch):
-    """`whiz config set auto_diarization_setup=false` must store a real bool:
+    """`wiz config set auto_diarization_setup=false` must store a real bool:
     the tri-state 'bool | None' type string once missed _coerce's bool branch,
     which would persist the STRING 'false' — truthy on every later load."""
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
@@ -1945,7 +1945,7 @@ def test_config_save_tri_state_none_semantics(tmp_path, monkeypatch):
 
 
 def test_config_show_renders_tri_state_unset_cleanly(tmp_path, monkeypatch, capsys):
-    """`whiz config show` renders the unset tri-state as <unset>, not the
+    """`wiz config show` renders the unset tri-state as <unset>, not the
     Python None repr."""
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(cli.cfg, "CONFIG_PATH", tmp_path / "config.toml")
@@ -2049,7 +2049,7 @@ def test_merge_validate_failure_raises_systemexit_with_hint(tmp_path, monkeypatc
     with pytest.raises(SystemExit) as excinfo:
         cli.cmd_merge(_merge_args(audio, outputs="", speakers=1))
     assert "config validation failed" in str(excinfo.value)
-    assert "pipx inject whiz 'whiz[diarize]'" in str(excinfo.value)
+    assert "pipx inject wiz 'wiz[diarize]'" in str(excinfo.value)
 
 
 def test_transcribe_chained_analyze_failure_surfaces_message_and_rc(tmp_path, monkeypatch, capsys):
@@ -2124,7 +2124,7 @@ def test_install_sherpa_rc0_but_not_importable_warns(monkeypatch, capsys):
     assert cli._install_sherpa_onnx() is False
     flat = " ".join(capsys.readouterr().err.split())
     assert "still not importable" in flat
-    assert "pipx inject whiz 'whiz[diarize]'" in flat
+    assert "pipx inject wiz 'wiz[diarize]'" in flat
 
 
 def test_merge_declined_setup_then_success_explains_cache_reuse(tmp_path, monkeypatch, capsys):
@@ -2277,7 +2277,7 @@ def test_transcribe_degraded_run_keeps_named_frames_manifest_rc0(tmp_path, monke
 
 
 def test_speakers_match_dim_mismatch_renders_na_not_crash(tmp_path, monkeypatch, capsys):
-    """`whiz speakers match` against a stored profile saved with a DIFFERENT
+    """`wiz speakers match` against a stored profile saved with a DIFFERENT
     embedding dim (embedding model swapped): cosine_similarity returns None
     and the score table must render an honest n/a — the old code crashed
     sorting None among floats, and read scores[0][0] on what could be an

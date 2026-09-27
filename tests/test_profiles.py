@@ -1,4 +1,4 @@
-"""Tests for whiz.profiles — embedding merge + save_profile merge behavior.
+"""Tests for wiz.profiles — embedding merge + save_profile merge behavior.
 
 Run with: pytest tests/test_profiles.py
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import profiles as P
+from wiz import profiles as P
 
 
 # ---------- merge_embeddings math ----------

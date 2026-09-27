@@ -2,7 +2,7 @@
 
 How the pieces fit, and the rules they follow.
 
-As of September 2026 whiz is one product: a transcription CLI. A recording goes
+As of September 2026 wiz is one product: a transcription CLI. A recording goes
 in — audio or video — and a labeled, named, frame-illustrated transcript plus
 an optional AI analysis comes out, all on the user's machine.
 
@@ -18,22 +18,22 @@ out.
 ## The split, and what it owes
 
 Dictation and transcription turned out to be two tools that happened to share
-a speech engine. The handoff is deliberately gentle, because `whiz dictate` is
+a speech engine. The handoff is deliberately gentle, because `wiz dictate` is
 in people's muscle memory, their LaunchAgents and their shell history:
 
-- `whiz dictate` (and the `d` alias) still parse and run — for a release or
+- `wiz dictate` (and the `d` alias) still parse and run — for a release or
   two — and print where it went (`cli.py`, `MYNAH_MOVED`), exiting nonzero.
 - The `dictate_*` config keys stay readable in an existing `config.toml`:
   `save()` preserves keys it does not know, so nothing is stripped on a
   routine config write before Mynah's first run has imported them
   (`config.py`). Mynah reads them once and owns them from then on.
-- `whiz upgrade` lost the extra and the LaunchAgent to look after; it now
+- `wiz upgrade` lost the extra and the LaunchAgent to look after; it now
   does the one thing it is still for — reinstall, re-inject the `diarize`
   extra when that one was already there, re-verify.
 
 The tuning contract and the golden corpus that used to live under `tuning/`
 were about dictation segmentation — utterance ends, energy gates, calibration.
-Nothing in whiz segments audio at session speed anymore; transcription is a
+Nothing in wiz segments audio at session speed anymore; transcription is a
 batch pipeline whose speech segmentation is whisper-cli's VAD plus sherpa-onnx
 diarization. The contract moved to mynah unchanged.
 
@@ -51,7 +51,7 @@ One Python package, ~6,000 lines, no compiled parts:
 | `profiles.py` | speaker voice profiles: cosine matching, sample-weighted merging, provenance |
 | `screenshots.py` | one frame per segment into `<stem>.frames/` + the `frames.json` manifest (the join key for vision analysis and HTML) |
 | `ai.py` | OpenAI-compatible chat API (Ollama by default): classifier probe, rolling-context map-reduce, retries, the Essentials section |
-| `config.py` | `~/.config/whiz/config.toml`: flat-TOML read/write, tri-state consent key, foreign-key preservation |
+| `config.py` | `~/.config/wiz/config.toml`: flat-TOML read/write, tri-state consent key, foreign-key preservation |
 | `ui.py` | rich terminal output; degrades to clean plain text when piped |
 
 Everything shells out or calls optional dependencies rather than bundling:
@@ -71,9 +71,9 @@ transcribe ──► audio.py ──► whisper-cli ──► diarize.py ──�
 analyze ──► ai.py (frames + transcript ──► map-reduce ──► .analysis.md)
 ```
 
-`whiz merge` re-runs only the diarization + merge against an existing whisper
+`wiz merge` re-runs only the diarization + merge against an existing whisper
 JSON, reusing the diarization cache, so tuning speaker count/threshold/names
-after a first run is instant. `whiz analyze` consumes the artifacts either
+after a first run is instant. `wiz analyze` consumes the artifacts either
 path produced.
 
 ## The contracts
@@ -114,7 +114,7 @@ tell; an explicitly passed `--outputs html` is never silently dropped (generic
 speaker labels are never clobbered by a degraded re-run, while existing
 degraded files are refreshed in place; names passed via `--speakers-names` are
 never silently discarded — the warning says so. Pinned by `tests/test_cli.py` /
-`tests/test_merge.py`. A `whiz merge` whose only outcome is keeping existing
+`tests/test_merge.py`. A `wiz merge` whose only outcome is keeping existing
 outputs is rc=0, not a false alarm.
 
 **Consent on the setup path.** The one-time diarization setup (sherpa-onnx
@@ -124,7 +124,7 @@ unset is omitted from emitted TOML, never clobbered). Non-TTY runs proceed
 without asking and without persisting; `--no-auto-diarization-setup`
 short-circuits before any prompt. Pinned by `tests/test_cli.py`.
 
-**Analysis contract.** Every `whiz analyze` run — any mode, single-call or
+**Analysis contract.** Every `wiz analyze` run — any mode, single-call or
 map-reduced — appends a dense `## Essentials` section to the same
 `.analysis.md`; long inputs are chunked with a rolling-context map-reduce
 (sliding window of prior partials, frames carried per-chunk so the model sees
@@ -158,6 +158,6 @@ decoder thresholds) and the Rust core plan all described *dictation
 segmentation across Python/Swift implementations*. That problem — keeping
 independent implementations of one engine from drifting — is now mynah's; its
 `tuning/tuning.toml` carried every value over byte-for-byte at the split. If
-whiz ever grows a second implementation of the pipeline above, the pattern
+wiz ever grows a second implementation of the pipeline above, the pattern
 moves with the need: constants in a pinned data file, no runtime reads, a
 corpus that refuses to encode a divergence.

@@ -1,4 +1,4 @@
-"""Tests for whiz.merge — overlap assignment, relabeling, formatting.
+"""Tests for wiz.merge — overlap assignment, relabeling, formatting.
 
 Run with: pytest tests/test_merge.py
 """
@@ -11,8 +11,8 @@ from pathlib import Path
 # Ensure the repo root is importable when run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import merge as MR
-from whiz.diarize import DiarSegment
+from wiz import merge as MR
+from wiz.diarize import DiarSegment
 
 
 def _seg(start, end, text="hello", words=None):

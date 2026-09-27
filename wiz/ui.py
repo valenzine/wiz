@@ -1,4 +1,4 @@
-"""whiz UI — styled terminal output helpers (rich-backed, plain-text fallback).
+"""wiz UI — styled terminal output helpers (rich-backed, plain-text fallback).
 
 All user-facing CLI output goes through this module so the look is consistent
 and degrades to clean plain text when stderr isn't a TTY (logs/redirects stay
@@ -19,23 +19,23 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
-from whiz.merge import speaker_palette
+from wiz.merge import speaker_palette
 
 # A single Console bound to stderr; rich auto-detects isatty, so piped/redirected
 # output has no ANSI escapes. force_terminal is left to auto so color still
 # shows when a pager like `less -R` is in the chain.
 _THEME = Theme({
-    "whiz.brand": "bold cyan",
-    "whiz.dim": "dim",
-    "whiz.kv.label": "bold",
-    "whiz.phase": "bold magenta",
-    "whiz.ok": "bold green",
-    "whiz.warn": "bold yellow",
-    "whiz.hint": "cyan",
-    "whiz.info": "blue",
-    "whiz.timestamp": "dim cyan",
-    "whiz.muted": "dim",
-    "whiz.rule": "dim cyan",
+    "wiz.brand": "bold cyan",
+    "wiz.dim": "dim",
+    "wiz.kv.label": "bold",
+    "wiz.phase": "bold magenta",
+    "wiz.ok": "bold green",
+    "wiz.warn": "bold yellow",
+    "wiz.hint": "cyan",
+    "wiz.info": "blue",
+    "wiz.timestamp": "dim cyan",
+    "wiz.muted": "dim",
+    "wiz.rule": "dim cyan",
 })
 _console = Console(stderr=True, theme=_THEME, highlight=False)
 
@@ -55,20 +55,20 @@ def header(title: str, subtitle: str = "") -> None:
         else:
             print(title, file=sys.stderr)
         return
-    # Left: ⚡ brand + title. Right: subtitle, right-aligned on the same line.
-    left = Text.assemble(("⚡ ", "whiz.brand"), (title, "bold"))
+    # Left: ∿ brand + title. Right: subtitle, right-aligned on the same line.
+    left = Text.assemble(("∿ ", "wiz.brand"), (title, "bold"))
     if subtitle:
         # Use a two-column table so the subtitle sits flush right.
         t = Table.grid(expand=True)
         t.add_column(ratio=1)
         t.add_column(justify="right")
-        t.add_row(left, Text(subtitle, "whiz.dim"))
+        t.add_row(left, Text(subtitle, "wiz.dim"))
         body = t
     else:
         body = left
     _console.print(Panel(
         body,
-        border_style="whiz.rule",
+        border_style="wiz.rule",
         padding=(0, 1),
         expand=True,
     ))
@@ -78,19 +78,19 @@ def rule() -> None:
     """Print a thin horizontal rule to separate major phases. No-op when piped."""
     if not _is_tty():
         return
-    _console.print(Rule(style="whiz.rule"))
+    _console.print(Rule(style="wiz.rule"))
 
 
 def phase(label: str) -> None:
     """Print a phase-step line, e.g. '▸ diarizing', preceded by a soft rule."""
     if _is_tty():
-        _console.print(Rule(style="whiz.rule"))
-    _console.print(f"[whiz.phase]▸[/] [bold]{label}[/]")
+        _console.print(Rule(style="wiz.rule"))
+    _console.print(f"[wiz.phase]▸[/] [bold]{label}[/]")
 
 
 def kv(label: str, value: Any) -> None:
     """Print an aligned 'label: value' line with a styled label."""
-    _console.print(f"[whiz.kv.label]{label:<7}[/] {value}")
+    _console.print(f"[wiz.kv.label]{label:<7}[/] {value}")
 
 
 def status(msg: str, kind: str = "info", detail: str | None = None) -> None:
@@ -100,24 +100,24 @@ def status(msg: str, kind: str = "info", detail: str | None = None) -> None:
     dimmed indented follow-up line — used for remediation hints under warnings.
 
     ``msg``/``detail`` are rendered as LITERAL text: messages routinely carry
-    data-derived strings (paths, commands like ``pipx inject whiz
-    'whiz[diarize]'``), and rich would otherwise parse ``[...]`` as a style
+    data-derived strings (paths, commands like ``pipx inject wiz
+    'wiz[diarize]'``), and rich would otherwise parse ``[...]`` as a style
     tag and silently eat it. Callers wanting markup should assemble a Text
     or use a dedicated renderer.
     """
     style = {
-        "ok": "whiz.ok",
-        "warn": "whiz.warn",
-        "hint": "whiz.hint",
-        "info": "whiz.info",
-    }.get(kind, "whiz.info")
+        "ok": "wiz.ok",
+        "warn": "wiz.warn",
+        "hint": "wiz.hint",
+        "info": "wiz.info",
+    }.get(kind, "wiz.info")
     # Text(style=...) — NOT an f-string with {Text(...)}: interpolating a
     # Text back into a markup string calls str() on it and rich re-parses
     # the result, defeating the escape. A Text passed as the renderable is
     # taken literally.
     _console.print(Text(msg, style=style))
     if detail:
-        _console.print(Text(f"    {detail}", style="whiz.muted"))
+        _console.print(Text(f"    {detail}", style="wiz.muted"))
 
 
 def info(msg: str) -> None:
@@ -126,14 +126,14 @@ def info(msg: str) -> None:
     Literal text for the same reason as ``status`` (square brackets in
     commands/paths must not be parsed as rich markup).
     """
-    _console.print(Text(msg, style="whiz.info"))
+    _console.print(Text(msg, style="wiz.info"))
 
 
 def muted(msg: str) -> None:
     """A dimmed line, e.g. 'removed intermediate foo.wav'. Literal text — see
-    ``status`` for why (commands like ``pipx inject whiz 'whiz[diarize]'
+    ``status`` for why (commands like ``pipx inject wiz 'wiz[diarize]'
     must survive verbatim)."""
-    _console.print(Text(msg, style="whiz.muted"))
+    _console.print(Text(msg, style="wiz.muted"))
 
 
 def note(msg: str) -> None:
@@ -148,13 +148,13 @@ def wrote(label: str, path: Any) -> None:
         ✓ Wrote labeled SRT
           recording.speakers.srt
     """
-    mark = Text("✓ ", style="whiz.ok")
-    lbl = Text(label, style="whiz.ok")
+    mark = Text("✓ ", style="wiz.ok")
+    lbl = Text(label, style="wiz.ok")
     if _is_tty():
         t = Table.grid(expand=False)
         t.add_column()
         t.add_row(Text.assemble(mark, lbl))
-        t.add_row(Text("  " + str(path), style="whiz.dim"))
+        t.add_row(Text("  " + str(path), style="wiz.dim"))
         _console.print(t)
     else:
         print(f"✓ {label}: {path}", file=sys.stderr)
@@ -170,13 +170,13 @@ def tally(counts: list[tuple[str, int]]) -> None:
     """Render the speaker tally with per-speaker colors matching the HTML palette."""
     if not counts:
         return
-    _console.print(f"[whiz.kv.label]{'Speakers':<7}[/] [bold]{len(counts)}[/] detected")
+    _console.print(f"[wiz.kv.label]{'Speakers':<7}[/] [bold]{len(counts)}[/] detected")
     # Align speaker names so the segment counts line up.
     width = max((len(label) for label, _ in counts), default=0)
     for label, n in counts:
         hex_color = speaker_palette(label)
         _console.print(
-            f"    [{hex_color}]●[/] [bold]{label:<{width}}[/]  [whiz.muted]{n} segments[/]"
+            f"    [{hex_color}]●[/] [bold]{label:<{width}}[/]  [wiz.muted]{n} segments[/]"
         )
 
 
@@ -189,12 +189,12 @@ def summary(items: list[str], title: str = "Done") -> None:
         for it in items:
             print(f"  · {it}", file=sys.stderr)
         return
-    body_lines = [Text(f"  · {it}", style="whiz.dim") for it in items]
-    head = Text.assemble(("✓ ", "whiz.ok"), (f"{title} · {len(items)} file(s)", "whiz.ok"))
+    body_lines = [Text(f"  · {it}", style="wiz.dim") for it in items]
+    head = Text.assemble(("✓ ", "wiz.ok"), (f"{title} · {len(items)} file(s)", "wiz.ok"))
     content = Group(head, *body_lines)
     _console.print(Panel(
         content,
-        border_style="whiz.rule",
+        border_style="wiz.rule",
         padding=(0, 1),
         expand=True,
     ))
@@ -224,16 +224,16 @@ def spinner(label: str) -> Iterator:
     (the underlying work still streams its own lines where applicable).
     """
     if not _is_tty():
-        _console.print(f"[whiz.phase]▸[/] [bold]{label}[/]")
+        _console.print(f"[wiz.phase]▸[/] [bold]{label}[/]")
 
         def update(msg: str) -> None:
             pass
 
         yield update
         return
-    with _console.status(f"[whiz.phase]▸[/] {label}", spinner="dots") as status:
+    with _console.status(f"[wiz.phase]▸[/] {label}", spinner="dots") as status:
         def update(msg: str) -> None:
-            status.update(f"[whiz.phase]▸[/] {label} · {msg}")
+            status.update(f"[wiz.phase]▸[/] {label} · {msg}")
 
         yield update
 
@@ -251,7 +251,7 @@ def streaming_progress(_cmd: list[str]) -> Iterator:
         # line includes its trailing newline from the subprocess
         prefix = f"[{_fmt_elapsed(elapsed)}] "
         if _is_tty():
-            _console.print(f"[whiz.timestamp]{prefix}[/][whiz.muted]{line.rstrip()}[/]")
+            _console.print(f"[wiz.timestamp]{prefix}[/][wiz.muted]{line.rstrip()}[/]")
         else:
             sys.stderr.write(prefix + line)
             if not line.endswith("\n"):

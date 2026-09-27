@@ -1,19 +1,19 @@
-"""whiz CLI — transcription subcommands.
+"""wiz CLI — transcription subcommands.
 
 Subcommands:
-  whiz transcribe <file>   Transcribe an audio/video file.
+  wiz transcribe <file>   Transcribe an audio/video file.
     --analyze              Chain into AI analysis after transcription.
-  whiz merge <file>        Re-run diarization + merge against an existing JSON.
-  whiz models list         Show discovered models.
-  whiz models download N   Download a model from HuggingFace.
-  whiz speakers list       List stored voice profiles.
-  whiz analyze <file>      AI-analyze a prior transcript (+ frames).
-  whiz dictate             Moved to Mynah: github.com/ReidenXerx/mynah
-  whiz config show         Show current config.
-  whiz config edit         Open config in $EDITOR.
-  whiz config set K=V      Set a config value.
+  wiz merge <file>        Re-run diarization + merge against an existing JSON.
+  wiz models list         Show discovered models.
+  wiz models download N   Download a model from HuggingFace.
+  wiz speakers list       List stored voice profiles.
+  wiz analyze <file>      AI-analyze a prior transcript (+ frames).
+  wiz dictate             Moved to Mynah: github.com/ReidenXerx/mynah
+  wiz config show         Show current config.
+  wiz config edit         Open config in $EDITOR.
+  wiz config set K=V      Set a config value.
 
-Run `whiz transcribe -h` for transcription flags.
+Run `wiz transcribe -h` for transcription flags.
 """
 
 from __future__ import annotations
@@ -27,18 +27,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-from whiz import __version__
-from whiz import audio as aud
-from whiz import config as cfg
-from whiz import diarize as D
-from whiz import merge as MR
-from whiz import models as M
-from whiz import screenshots as SC
-from whiz import ai as AI
-from whiz import profiles as P
-from whiz import ui
+from wiz import __version__
+from wiz import audio as aud
+from wiz import config as cfg
+from wiz import diarize as D
+from wiz import merge as MR
+from wiz import models as M
+from wiz import screenshots as SC
+from wiz import ai as AI
+from wiz import profiles as P
+from wiz import ui
 
-# whisper-cli output-format flags. "html" is whiz-only (post-merge, not a
+# whisper-cli output-format flags. "html" is wiz-only (post-merge, not a
 # whisper-cli flag) — handled in _write_labeled_outputs via merge.format_speakers_html.
 OUTPUT_FLAGS = {
     "txt": "-otxt",
@@ -48,13 +48,13 @@ OUTPUT_FLAGS = {
     "json-full": "-ojf",
     "csv": "-ocsv",
     "lrc": "-olrc",
-    "html": "__whiz_html__",  # sentinel; filtered out before whisper-cli
+    "html": "__wiz_html__",  # sentinel; filtered out before whisper-cli
 }
 
 # The diarize extra's requirement string. The auto-setup installs the SAME
 # spec pyproject declares — a bare `pip install sherpa-onnx` could land a
 # version older than the project's declared minimum, making the auto path and
-# the documented manual path (`pipx inject whiz 'whiz[diarize]'`) install
+# the documented manual path (`pipx inject wiz 'wiz[diarize]'`) install
 # different things. Keep in sync with [project.optional-dependencies] diarize
 # in pyproject.toml.
 _DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
@@ -218,7 +218,7 @@ def _fmt_elapsed(seconds: float) -> str:
 def _video_auto_flags(args: argparse.Namespace, in_path: Path) -> tuple[bool, bool]:
     """Resolve effective (screenshots, speakers) for a video input.
 
-    For video inputs whiz auto-enables screenshots and diarization so the user
+    For video inputs wiz auto-enables screenshots and diarization so the user
     doesn't have to pass ``--screenshots`` / ``--speakers`` every time. The
     opt-out flags ``--no-screenshots`` / ``--no-speakers`` disable either.
     Explicit ``--speakers`` / ``--screenshots`` (the on-switches) still work
@@ -264,9 +264,9 @@ def _install_sherpa_onnx() -> bool:
     not a lazy stub). Returns True on success.
 
     ``sys.executable`` (not a pipx binary) installs into whatever venv is
-    running whiz — a dev ``uv run`` venv, a pipx venv, anything — so this
+    running wiz — a dev ``uv run`` venv, a pipx venv, anything — so this
     also covers upgrade-reinstalled environments. Under pipx, ``pipx inject
-    whiz 'whiz[diarize]'`` is the equivalent manual command (see README).
+    wiz 'wiz[diarize]'`` is the equivalent manual command (see README).
     """
     import importlib
 
@@ -278,7 +278,7 @@ def _install_sherpa_onnx() -> bool:
     ).returncode
     if rc != 0:
         ui.status(f"Warning: pip install sherpa-onnx failed (exit {rc}).", kind="warn",
-                  detail="Run manually: pipx inject whiz 'whiz[diarize]'")
+                  detail="Run manually: pipx inject wiz 'wiz[diarize]'")
         return False
     importlib.invalidate_caches()
     try:
@@ -292,13 +292,13 @@ def _install_sherpa_onnx() -> bool:
             ui.status(
                 "Warning: pip reported success but sherpa_onnx is still not importable.",
                 kind="warn",
-                detail="Install manually: pipx inject whiz 'whiz[diarize]' "
-                       "&& whiz models download-diarization",
+                detail="Install manually: pipx inject wiz 'wiz[diarize]' "
+                       "&& wiz models download-diarization",
             )
             return False
     except Exception as e:  # noqa: BLE001
         ui.status(f"Warning: could not verify the sherpa-onnx install: {e}", kind="warn",
-                  detail="Install manually: pipx inject whiz 'whiz[diarize]'")
+                  detail="Install manually: pipx inject wiz 'wiz[diarize]'")
         return False
     ui.status("sherpa-onnx installed.", kind="ok")
     return True
@@ -311,7 +311,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
 
     1. ``auto_diarization_setup`` in config (bool) answers permanently —
        written by this prompt's y/N, or set by hand with
-       ``whiz config set auto_diarization_setup=false``.
+       ``wiz config set auto_diarization_setup=false``.
     2. Interactive terminal: ask ONCE (y/N, default No — writing into
        site-packages deserves a prompt, unlike the VAD model's cache-file
        download), then persist the answer so the question never recurs.
@@ -349,8 +349,8 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     if not allowed:
         ui.status(
             "Skipping the one-time diarization setup (declined). Install "
-            "manually with: pipx inject whiz 'whiz[diarize]' && whiz models "
-            "download-diarization — or allow it later with: whiz config set "
+            "manually with: pipx inject wiz 'wiz[diarize]' && wiz models "
+            "download-diarization — or allow it later with: wiz config set "
             "auto_diarization_setup=true",
             kind="hint",
         )
@@ -370,7 +370,7 @@ def _ensure_diarization_ready(config: cfg.Config, *, dry_run: bool = False, setu
 
     Proactive-first policy (user decision, 2026-09-05): when diarization is
     about to run — auto-enabled for video or explicitly requested — and the
-    one-time setup is missing, whiz performs it on the spot instead of
+    one-time setup is missing, wiz performs it on the spot instead of
     degrading: ``_install_sherpa_onnx`` (pip install of the diarize extra's
     declared spec into the running venv), then ``D.download_diarization_models``
     (~90 MB one-time download). The degraded fallbacks stay as the safety net
@@ -413,7 +413,7 @@ def _ensure_diarization_ready(config: cfg.Config, *, dry_run: bool = False, setu
             D.download_diarization_models()
         except Exception as e:  # noqa: BLE001
             ui.status(f"Warning: diarization model download failed: {e}", kind="warn",
-                      detail="Run manually: whiz models download-diarization")
+                      detail="Run manually: wiz models download-diarization")
             return False
         ui.status("Diarization models downloaded.", kind="ok")
     # Re-check rather than assume: a partial download (e.g. one model file)
@@ -515,7 +515,7 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
     ) and speakers_auto and args.speakers is None:
         ui.status("Speakers: diarization not available (setup incomplete); skipping speaker labels for this run.",
                   kind="hint",
-                  detail="Run manually: pipx inject whiz 'whiz[diarize]' && whiz models download-diarization")
+                  detail="Run manually: pipx inject wiz 'wiz[diarize]' && wiz models download-diarization")
         ui.muted("  Or silence this with: --no-speakers")
         diarize_enabled = False
         speakers_auto = False
@@ -525,14 +525,14 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
         model_path = M.resolve(model_ref, config)
         if model_path is None:
             raise SystemExit(
-                f"Model '{model_ref}' not found. Run `whiz models list` to see what's available, "
-                f"or `whiz models download {model_ref}` to fetch it."
+                f"Model '{model_ref}' not found. Run `wiz models list` to see what's available, "
+                f"or `wiz models download {model_ref}` to fetch it."
             )
     else:
         model_path = M.pick_best(config)
         if model_path is None:
             raise SystemExit(
-                "No models found. Run `whiz models download turbo` to get a fast one."
+                "No models found. Run `wiz models download turbo` to get a fast one."
             )
 
     # Reject invalid formats before creating a temporary WAV.
@@ -603,8 +603,8 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
     out_flags = []
     for o in outputs:
         flag = OUTPUT_FLAGS[o]
-        if flag == "__whiz_html__":
-            continue  # html is a whiz post-merge output, not a whisper-cli flag
+        if flag == "__wiz_html__":
+            continue  # html is a wiz post-merge output, not a whisper-cli flag
         out_flags.append(flag)
 
     # Output base path.
@@ -640,7 +640,7 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
         elif not args.dry_run:
             ui.status("Warning: VAD enabled but no VAD model available; whisper-cli may fail.",
                       kind="warn",
-                      detail="Run `whiz models download-vad` or disable with --no-vad.")
+                      detail="Run `wiz models download-vad` or disable with --no-vad.")
         elif args.dry_run and vad_model_path is None:
             ui.muted("DRY-RUN: no VAD model found; would download ggml-silero-vad.bin at run time.")
             vad_flags += ["--vad-model", "<PATH-TO-VAD-MODEL>"]
@@ -772,7 +772,7 @@ def _prompt_speaker_names(
     speakers = MR.speakers_in_order(merged)
     quotes = MR.representative_quotes(merged)
     name_map: dict[str, str] = {}
-    ui.header("whiz", "name the speakers")
+    ui.header("wiz", "name the speakers")
     ui.muted("A representative quote is shown for each. Enter a real name")
     ui.muted("(or press Enter to keep the default).")
     for label in speakers:
@@ -892,7 +892,7 @@ def _save_named_profiles(
     centroid. When the guard keeps an existing profile, the run SAYS so
     instead of reporting a merge that never happened.
     """
-    from whiz.merge import _SPEAKER_LETTERS
+    from wiz.merge import _SPEAKER_LETTERS
 
     label_to_cid: dict[str, int] = {
         f"Speaker {letter}": i for i, letter in enumerate(_SPEAKER_LETTERS)
@@ -945,7 +945,7 @@ def _write_labeled_outputs(
     speakers_names: list[str] | None = None,
     html: bool = False,
     frames_dir: Path | None = None,
-    title: str = "whiz transcript",
+    title: str = "wiz transcript",
     profile_names: dict[str, str] | None = None,
     cluster_embeddings: dict[int, list[float]] | None = None,
     save_profiles: bool = False,
@@ -1086,7 +1086,7 @@ def _write_html_transcript(
     requested: every cue gets a generic ``Speaker`` label, with ``note``
     rendered as a muted provenance line in the page. When ``transcript_txt``
     is set (audio runs — no frames manifest exists there), also writes a
-    generic-label ``.speakers.txt`` so ``whiz analyze``, which needs a frames
+    generic-label ``.speakers.txt`` so ``wiz analyze``, which needs a frames
     manifest or a ``.speakers.txt``, still finds a transcript.
 
     Returns ``(written, kept)`` — the paths this run wrote and the existing
@@ -1099,7 +1099,7 @@ def _write_html_transcript(
     in the txt) is overwritten: there are no speaker names in it to destroy,
     and keeping it would break idempotence — a re-run with a different
     --model/--language or audio must be able to refresh the degraded
-    transcript (the guard protects named data, not whiz's own degraded
+    transcript (the guard protects named data, not wiz's own degraded
     output from an earlier fallback).
     """
     def _kept(existing: Path) -> None:
@@ -1181,7 +1181,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
         lead = ("Falling back to generic 'Speaker' labels. Enable with: "
                 if _will_write_generic_labels(args) else
                 "Skipping speaker labels for this run. Enable with: ")
-        detail = lead + "pipx inject whiz 'whiz[diarize]' && whiz models download-diarization"
+        detail = lead + "pipx inject wiz 'wiz[diarize]' && wiz models download-diarization"
         extra = _discarded_naming_detail(args)
         if extra:
             detail += f" {extra}"
@@ -1224,7 +1224,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
     # the input stem unless the user explicitly chose an output base.
     artifact_base = of_base if args.output else in_path.with_suffix("")
 
-    ui.header("whiz", f"transcription · v{__version__}")
+    ui.header("wiz", f"transcription · v{__version__}")
     ui.kv("Model", model_path)
     ui.kv("Input", in_path)
     if wav != in_path:
@@ -1251,9 +1251,9 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
         return 0
 
     # --- Resumability: skip transcription if a whisper JSON already exists ---
-    # --resume lets you re-run `whiz transcribe` to redo diarization + merge
+    # --resume lets you re-run `wiz transcribe` to redo diarization + merge
     # (e.g. with a different --speakers count) without re-running whisper-cli.
-    # It's an ergonomic alias for `whiz merge` triggered from transcribe.
+    # It's an ergonomic alias for `wiz merge` triggered from transcribe.
     json_path = _find_whisper_json(of_base, wav, of_passed=of_passed)
     resuming = bool(getattr(args, "resume", False) and json_path.exists())
     diar_segments: list[D.DiarSegment] = []
@@ -1391,7 +1391,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
             # describes the success path). The labeled .speakers.srt is NOT
             # faked here: it requires real diarization. The degraded writer
             # never overwrites existing speaker outputs, and on audio runs
-            # (no frames manifest for `whiz analyze` to fall back on) it
+            # (no frames manifest for `wiz analyze` to fall back on) it
             # writes a generic-label .speakers.txt so analyze still works.
             unlabeled = [(seg, "Speaker") for seg in whisper_segs]
             frames_dir = None
@@ -1446,7 +1446,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
 
     ui.summary(written)
 
-    # L (wave-1 audit): rc symmetry with `whiz merge`. An EXPLICIT --speakers
+    # L (wave-1 audit): rc symmetry with `wiz merge`. An EXPLICIT --speakers
     # that degraded to generic labels and wrote nothing speaker-related
     # used to exit 0 here while merge exits 1 for the same outcome — a
     # wrapper could not tell the transcribe failed to deliver the requested
@@ -1465,7 +1465,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
         return 1
 
     # Optional: chain into AI analysis after a successful transcription.
-    # Runs the same auto-detect path as `whiz analyze <file>` so the user gets
+    # Runs the same auto-detect path as `wiz analyze <file>` so the user gets
     # summary+actions or an implementation plan without a second command.
     if getattr(args, "analyze", False) and rc == 0:
         from types import SimpleNamespace
@@ -1507,7 +1507,7 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
                 "The transcription itself succeeded — the artifacts above are "
                 "usable — but the chained analysis did not complete.",
                 kind="warn",
-                detail="Re-run analysis directly: whiz analyze <file>",
+                detail="Re-run analysis directly: wiz analyze <file>",
             )
             return analyze_rc
 
@@ -1523,7 +1523,7 @@ def cmd_models_list(args: argparse.Namespace) -> int:
         ui.status("No models found in:", kind="warn")
         for d in cfg.model_search_dirs(config):
             ui.muted(f"  {d}")
-        ui.info("Download one with: whiz models download turbo")
+        ui.info("Download one with: wiz models download turbo")
         return 0
     ui.table(
         "Discovered models",
@@ -1538,7 +1538,7 @@ def cmd_models_download(args: argparse.Namespace) -> int:
     dest = Path(args.dest).expanduser() if args.dest else None
     try:
         path = M.download(args.model, config, dest_dir=dest)
-        print(f"\nDone. Use it with: whiz transcribe -m {path} <file>")
+        print(f"\nDone. Use it with: wiz transcribe -m {path} <file>")
         return 0
     except FileExistsError as e:
         print(e)
@@ -1574,7 +1574,7 @@ def cmd_models_download_diarization(args: argparse.Namespace) -> int:
     dest = Path(args.dest).expanduser() if args.dest else None
     try:
         seg, emb = D.download_diarization_models(dest_dir=dest)
-        print("\nDone. Enable with: whiz transcribe --speakers <file>")
+        print("\nDone. Enable with: wiz transcribe --speakers <file>")
         return 0
     except Exception as e:  # noqa: BLE001
         print(f"Download failed: {e}", file=sys.stderr)
@@ -1678,7 +1678,7 @@ def _resolve_vision(*, explicit_vision: bool, no_vision: bool, has_frames: bool,
         return True, "info", ("Frames found and '{m}' is vision-capable; auto-enabling "
                               "vision (use --no-vision to opt out).").format(m=model)
     return False, "hint", ("Frames found but '{m}' doesn't look vision-capable; staying "
-                           "text-only. Run `whiz config set ai_model=llava` (or another "
+                           "text-only. Run `wiz config set ai_model=llava` (or another "
                            "vision model) and re-analyze to use the frames.").format(m=model)
 
 
@@ -1702,7 +1702,7 @@ def _pick_model_interactive(config: cfg.Config, *, prefer_vision: bool) -> str |
     models = AI.list_ollama_models(base_url)
     if not models:
         ui.status("No AI model configured and no models found at the server.", kind="warn",
-                  detail="Set one with:  whiz config set ai_model=llava\nOr start Ollama:  ollama serve")
+                  detail="Set one with:  wiz config set ai_model=llava\nOr start Ollama:  ollama serve")
         return None
     # Probe each model once. Cloud-tagged/retired models fail here; we mark them
     # and prefer a live one for the default.
@@ -1720,13 +1720,13 @@ def _pick_model_interactive(config: cfg.Config, *, prefer_vision: bool) -> str |
         ui.status("None of the listed models responded to a probe.", kind="warn",
                   detail="Ollama listed models but every one failed a trivial chat call.\n"
                           "Cloud models may be retired server-side; pull a local one with `ollama pull llama3.1`.\n"
-                          "Or set a model explicitly:  whiz config set ai_model=...")
+                          "Or set a model explicitly:  wiz config set ai_model=...")
         return None
     # Recommend the best live model (heuristic over the live subset).
     live_names = [n for _, n in live]
     rec_in_live = _recommend_model(live_names, prefer_vision=prefer_vision)
     rec_idx = live[rec_in_live][0]  # map back to the full-list index for display
-    ui.header("whiz", "models")
+    ui.header("wiz", "models")
     rows: list[list[object]] = []
     for i, name in enumerate(models):
         mark = "\u2190 recommended" if i == rec_idx else ""
@@ -1778,7 +1778,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     <stem>.analysis.md and prints the response to stdout.
 
     Vision is **auto-enabled** when a frames manifest exists and the configured
-    model looks vision-capable, so a video run followed by ``whiz analyze`` uses
+    model looks vision-capable, so a video run followed by ``wiz analyze`` uses
     the frames without needing ``--vision``. ``--no-vision`` opts out, and a
     text-only model stays text-only with a hint (we never send images to a model
     that will reject them).
@@ -1805,7 +1805,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     else:
         raise SystemExit(
             f"No transcript found. Looked for:\n  {manifest_path}\n  {txt_path}\n"
-            "Run `whiz transcribe --speakers [--screenshots] <file>` first."
+            "Run `wiz transcribe --speakers [--screenshots] <file>` first."
         )
     has_frames = entries is not None
 
@@ -1879,7 +1879,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         )
 
     # Write the .analysis.md (prompt + response) and print response to stdout.
-    md = f"# whiz analysis — {in_path.name}\n\n"
+    md = f"# wiz analysis — {in_path.name}\n\n"
     md += f"**Model:** {model}  **Vision:** {use_vision}  **Mode:** {detected_mode}\n\n"
     md += "## Prompt\n\n```\n" + prompt_template.replace("{transcript}", "<transcript omitted>") + "\n```\n\n"
     md += "## Response\n\n" + response + "\n"
@@ -1895,7 +1895,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
     Lets you tune --speakers / --cluster-threshold without redoing the
     expensive whisper-cli transcription. The whisper JSON (produced by a
-    prior `whiz transcribe --speakers` or `--outputs json`) is reused.
+    prior `wiz transcribe --speakers` or `--outputs json`) is reused.
     """
     cleanup: list[tuple[Path, Path]] = []
     try:
@@ -1913,7 +1913,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
         raise SystemExit(f"Input file not found: {in_path}")
 
     # Video inputs auto-enable screenshots + diarization here too (opt out with
-    # --no-screenshots / --no-speakers), matching `whiz transcribe`.
+    # --no-screenshots / --no-speakers), matching `wiz transcribe`.
     screenshots, speakers_auto = _video_auto_flags(args, in_path)
     speakers_requested = args.speakers is not None or speakers_auto
 
@@ -1931,7 +1931,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     else:
         setup_ready = True
     # M1 (wave-1 audit): the diarization call below is gated on
-    # speakers_requested — a `whiz merge --no-speakers` (or an audio file with
+    # speakers_requested — a `wiz merge --no-speakers` (or an audio file with
     # no --speakers) must NOT pay a model-resolution attempt inside
     # run_diarization; it merges straight to the JSON path, exactly like the
     # comment above (and the 1607-1611 gate) promise.
@@ -1955,9 +1955,9 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     if not json_path.exists():
         raise SystemExit(
             f"No whisper JSON found (looked for {json_path}).\n"
-            "Run `whiz transcribe <file>` first to produce one, or pass --json <path>."
+            "Run `wiz transcribe <file>` first to produce one, or pass --json <path>."
         )
-    ui.header("whiz", f"merge · v{__version__}")
+    ui.header("wiz", f"merge · v{__version__}")
     ui.kv("JSON", json_path)
 
     try:
@@ -2050,8 +2050,8 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
             naming = _discarded_naming_detail(args)
             if speakers_auto and args.speakers is None:
                 # Auto-enabled only: fall back to unlabeled output, don't crash.
-                detail = ("Skipping speaker labels. Enable with: pipx inject whiz 'whiz[diarize]' "
-                          "&& whiz models download-diarization")
+                detail = ("Skipping speaker labels. Enable with: pipx inject wiz 'wiz[diarize]' "
+                          "&& wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2061,9 +2061,9 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
             elif explicit_html or want_frames:
                 # Explicitly requested, but an HTML transcript / screenshots
                 # can still be produced: degrade to generic 'Speaker' labels
-                # instead of crashing (mirrors the `whiz transcribe` fallback).
+                # instead of crashing (mirrors the `wiz transcribe` fallback).
                 detail = ("Falling back to generic 'Speaker' labels. Enable with: "
-                          "pipx inject whiz 'whiz[diarize]' && whiz models download-diarization")
+                          "pipx inject wiz 'wiz[diarize]' && wiz models download-diarization")
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2072,8 +2072,8 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 degraded_note_shown = True
             else:
                 raise SystemExit(
-                    f"{msg}\nEnable diarization with: pipx inject whiz 'whiz[diarize]' && "
-                    f"whiz models download-diarization"
+                    f"{msg}\nEnable diarization with: pipx inject wiz 'wiz[diarize]' && "
+                    f"wiz models download-diarization"
                 )
     if speakers_requested and not diar_segments:
         if degraded_note_shown:
@@ -2206,10 +2206,10 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     # --- Unlabeled HTML fallback ---
     # Diarization produced nothing but HTML was EXPLICITLY requested: emit
     # the transcript with generic 'Speaker' labels instead of silently
-    # skipping it (mirrors the `whiz transcribe` fallback); config-supplied
+    # skipping it (mirrors the `wiz transcribe` fallback); config-supplied
     # html keeps master's skip. The labeled .speakers.srt is not faked: it
     # requires real diarization; on audio runs a generic-label
-    # .speakers.txt is still written so `whiz analyze` finds a transcript
+    # .speakers.txt is still written so `wiz analyze` finds a transcript
     # (it needs a frames manifest or a .speakers.txt). Existing speaker
     # outputs from an earlier diarized run are never overwritten.
     if explicit_html and not merged and whisper_segs:
@@ -2227,7 +2227,7 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
             # Everything this run would have written already existed and was
             # correctly KEPT (named outputs from an earlier diarized run) — a
             # no-op success, not a failure. rc=1 here would false-alarm
-            # `whiz merge ... || alert` wrappers on identical re-runs.
+            # `wiz merge ... || alert` wrappers on identical re-runs.
             return 0
         # E.g. diarization produced no segments and no html/screenshots
         # fallback was requested: a silent rc=0 would read as success.
@@ -2237,8 +2237,8 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
 
 # ---------- dictate (moved to Mynah) ----------
 
-# Dictation left whiz for https://github.com/ReidenXerx/mynah. The command stays
-# for a release or two, because `whiz dictate` is in people's muscle memory, in
+# Dictation left wiz for https://github.com/ReidenXerx/mynah. The command stays
+# for a release or two, because `wiz dictate` is in people's muscle memory, in
 # their LaunchAgent, and in a shell history they will page back through: it
 # should say where its replacement went rather than "unknown command".
 MYNAH_MOVED = """\
@@ -2250,7 +2250,7 @@ Dictation moved to Mynah — its own tool now.
 Your settings come with it: Mynah's first run reads the dictate_* keys out of
 whiz's config.toml. https://duduphudu.app/mynah/
 
-whiz still transcribes recordings: whiz transcribe, whiz analyze, whiz merge."""
+wiz still transcribes recordings: wiz transcribe, wiz analyze, wiz merge."""
 
 
 def cmd_dictate(args: argparse.Namespace) -> int:
@@ -2277,7 +2277,7 @@ def cmd_speakers_list(args: argparse.Namespace) -> int:
         [("Name", "left"), ("Dim", "right"), ("Samples", "right"), ("Created", "left"), ("Path", "left")],
         rows,
     )
-    ui.muted(f"Match threshold: {cfg.load().speaker_match_threshold} (whiz config set speaker_match_threshold=...)")
+    ui.muted(f"Match threshold: {cfg.load().speaker_match_threshold} (wiz config set speaker_match_threshold=...)")
     return 0
 
 
@@ -2331,8 +2331,8 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
         raise SystemExit(
             "Diarization unavailable (sherpa-onnx or models missing, setup "
             "failed or opted out).\n"
-            "Run manually: pipx inject whiz 'whiz[diarize]' && "
-            "whiz models download-diarization"
+            "Run manually: pipx inject wiz 'wiz[diarize]' && "
+            "wiz models download-diarization"
         )
 
     diarization_source = wav
@@ -2363,7 +2363,7 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
             return 0
 
         cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
-        from whiz.merge import speaker_label
+        from wiz.merge import speaker_label
         matches = P.match_speakers(cluster_embeddings, profiles, threshold=config.speaker_match_threshold)
         rows = []
         for cid, emb in sorted(cluster_embeddings.items()):
@@ -2446,7 +2446,7 @@ def _coerce(value: str, field_type: type):
     if ft in ("bool", "bool | None", "Optional[bool]"):
         # "bool | None" arrives for tri-state fields (auto_diarization_setup):
         # the string must NOT fall through to the raw-string branch below —
-        # `whiz config set auto_diarization_setup=false` would otherwise
+        # `wiz config set auto_diarization_setup=false` would otherwise
         # store the STRING "false", which is truthy on every later load.
         return value.lower() in {"1", "true", "yes", "on"}
     if ft == "int":
@@ -2487,7 +2487,7 @@ def cmd_config_set(args: argparse.Namespace) -> int:
     config = cfg.load()
     assignment = args.assignment
     if "=" not in assignment:
-        raise SystemExit("Expected KEY=VALUE (e.g. whiz config set threads=8)")
+        raise SystemExit("Expected KEY=VALUE (e.g. wiz config set threads=8)")
     key, _, value = assignment.partition("=")
     key = key.strip()
     if key not in cfg.Config.__dataclass_fields__:
@@ -2504,7 +2504,7 @@ def cmd_config_set(args: argparse.Namespace) -> int:
 
 # ---------- upgrade ----------
 
-# The canonical install source. pipx installs from this git URL, so `whiz
+# The canonical install source. pipx installs from this git URL, so `wiz
 # upgrade` re-runs the same install to pull the latest commit.
 _INSTALL_SOURCE = "git+https://github.com/valenzine/wiz.git"
 
@@ -2529,32 +2529,32 @@ def _run_live(cmd: list[str]) -> int:
 
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
-    """Reinstall whiz from git, keeping the extras that were already there.
+    """Reinstall wiz from git, keeping the extras that were already there.
 
-    The trap this closes: `pipx install --force` gives you a new whiz, but an
+    The trap this closes: `pipx install --force` gives you a new wiz, but an
     extra installed alongside it (diarization) is not re-injected, so the next
     run fails on an import that worked yesterday. Re-inject what was installed,
     and only what was installed — a transcription-only user should not be
     surprised by a download they never asked for.
     """
-    ui.header("whiz", "upgrade")
+    ui.header("wiz", "upgrade")
 
     had_diarize = _diarize_extra_installed()
 
-    ui.phase("reinstalling whiz")
+    ui.phase("reinstalling wiz")
     rc = _run_live(["pipx", "install", "--force", _INSTALL_SOURCE])
     if rc != 0:
         ui.status(f"pipx install failed (exit {rc}) — nothing else was changed", kind="bad")
         return 1
-    ui.status("whiz reinstalled", kind="ok")
+    ui.status("wiz reinstalled", kind="ok")
 
     if had_diarize:
         ui.phase("refreshing the diarize extra")
-        rc = _run_live(["pipx", "inject", "whiz", "whiz[diarize]"])
+        rc = _run_live(["pipx", "inject", "wiz", "wiz[diarize]"])
         if rc != 0:
             ui.status(
-                f"pipx inject whiz[diarize] failed (exit {rc}). Speaker detection may be "
-                "stale — re-run: pipx inject whiz 'whiz[diarize]'",
+                f"pipx inject wiz[diarize] failed (exit {rc}). Speaker detection may be "
+                "stale — re-run: pipx inject wiz 'wiz[diarize]'",
                 kind="warn",
             )
         else:
@@ -2570,12 +2570,12 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="whiz",
-        description="whiz — transcription CLI. Transcribe, diarize, name speakers, "
+        prog="wiz",
+        description="wiz — transcription CLI. Transcribe, diarize, name speakers, "
                     "capture frames, build HTML transcripts, and run AI analysis. "
                     "Powered by whisper.cpp.",
     )
-    p.add_argument("-V", "--version", action="version", version=f"whiz {__version__}")
+    p.add_argument("-V", "--version", action="version", version=f"wiz {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     # transcribe
@@ -2607,11 +2607,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--no-screenshots", dest="no_screenshots", action="store_true", help="Disable the auto-enabled on-screen frame extraction for video inputs (opt out)")
     t.add_argument("--screenshot-width", type=int, default=None, help="Frame width in pixels (default 1280; 0 = native resolution)")
     t.add_argument("--no-voice-profiles", dest="no_voice_profiles", action="store_true", help="Don't compute voice-profile embeddings or auto-match/save speaker profiles this run")
-    t.add_argument("--resume", action="store_true", help="Skip whisper-cli transcription if its JSON output already exists and go straight to diarization + merge (ergonomic alias for `whiz merge`)"),
+    t.add_argument("--resume", action="store_true", help="Skip whisper-cli transcription if its JSON output already exists and go straight to diarization + merge (ergonomic alias for `wiz merge`)"),
     t.add_argument("--verbose", action="store_true", help="Verbose whisper-cli output")
     t.add_argument("--extra", nargs=argparse.REMAINDER, default=[], help="Extra flags passed verbatim to whisper-cli")
     t.add_argument("--dry-run", action="store_true", help="Print the command without running it")
-    t.add_argument("--analyze", action="store_true", help="After transcription, run AI analysis (auto-detect: summary+actions or implementation plan). Equivalent to a follow-up `whiz analyze <file>`. For video inputs this auto-enables vision when the AI model is vision-capable.")
+    t.add_argument("--analyze", action="store_true", help="After transcription, run AI analysis (auto-detect: summary+actions or implementation plan). Equivalent to a follow-up `wiz analyze <file>`. For video inputs this auto-enables vision when the AI model is vision-capable.")
     t.add_argument("--vision", action="store_true", help="With --analyze, force sending on-screen frames to a vision model (auto-enabled for video when the model is vision-capable; this flag forces it on for audio/non-video runs)")
     t.add_argument("--no-vision", dest="no_vision", action="store_true", help="With --analyze, opt out of the auto-enabled vision analysis (stay text-only even for a video with frames)")
     t.set_defaults(func=cmd_transcribe)
@@ -2620,7 +2620,7 @@ def build_parser() -> argparse.ArgumentParser:
     mg = sub.add_parser("merge", help="Re-run diarization + merge against an existing whisper JSON (skip transcription)")
     mg.add_argument("file", help="Input audio/video file (used to find the whisper JSON and re-extract WAV if needed)")
     mg.add_argument("--json", default="", help="Explicit path to the whisper JSON (default: auto-find next to input)")
-    mg.add_argument("--outputs", default=None, help="Comma-separated whiz post-merge output formats: html (others are whisper-cli formats, ignored here)")
+    mg.add_argument("--outputs", default=None, help="Comma-separated wiz post-merge output formats: html (others are whisper-cli formats, ignored here)")
     mg.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Known speaker count; omit = auto-detect. Auto-enabled for video inputs (see --no-speakers)")
     mg.add_argument("--no-speakers", dest="no_speakers", action="store_true", help="Disable the auto-enabled speaker diarization for video inputs (opt out)")
     mg.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
@@ -2649,7 +2649,7 @@ def build_parser() -> argparse.ArgumentParser:
     mvd.add_argument("--dest", default="", help="Destination directory (default: ~/.cache/whisper)")
     mvd.set_defaults(func=cmd_models_download_vad)
     mdiar = msub.add_parser("download-diarization", aliases=["diar"], help="Download diarization models (sherpa-onnx segmentation + embedding)")
-    mdiar.add_argument("--dest", default="", help="Destination directory (default: ~/.cache/whiz/diarization)")
+    mdiar.add_argument("--dest", default="", help="Destination directory (default: ~/.cache/wiz/diarization)")
     mdiar.set_defaults(func=cmd_models_download_diarization)
 
     # analyze
@@ -2697,7 +2697,7 @@ def build_parser() -> argparse.ArgumentParser:
     cs.set_defaults(func=cmd_config_set)
 
     # upgrade
-    up = sub.add_parser("upgrade", aliases=["up"], help="One-command upgrade: reinstall whiz from git, refresh the dictate extra if installed, restart the background dictation service if installed, and re-verify. Handles the full update dance so you don't need manual pipx/service-restart steps.")
+    up = sub.add_parser("upgrade", aliases=["up"], help="One-command upgrade: reinstall wiz from git, refresh the dictate extra if installed, restart the background dictation service if installed, and re-verify. Handles the full update dance so you don't need manual pipx/service-restart steps.")
     up.set_defaults(func=cmd_upgrade)
 
     return p
@@ -2707,6 +2707,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        for old, new in cfg.migrate_legacy_dirs():
+            ui.info(f"Copied your whiz data from {old} to {new} (the original is untouched).")
         rc = args.func(args)
     except SystemExit:
         raise

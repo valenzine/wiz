@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz.diarize import DiarSegment, load_diarization_cache, _write_diarization_cache, diar_cache_path
-from whiz import profiles as P
+from wiz.diarize import DiarSegment, load_diarization_cache, _write_diarization_cache, diar_cache_path
+from wiz import profiles as P
 
 
 # ---------- diarization cache ----------
@@ -262,8 +262,8 @@ def test_match_speakers_empty_clusters():
 
 def test_save_load_forget_profile(tmp_path, monkeypatch):
     """Profile persistence round-trip with an isolated config dir."""
-    monkeypatch.setattr("whiz.config.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("whiz.profiles.cfg.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("wiz.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("wiz.profiles.cfg.CONFIG_DIR", tmp_path)
     # save_profile writes to profiles_dir() which reads cfg.CONFIG_DIR at call
     # time, so the monkeypatch takes effect.
     P.save_profile("Alice", [1.0, 2.0, 3.0], samples=5)

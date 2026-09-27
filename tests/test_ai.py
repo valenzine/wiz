@@ -1,4 +1,4 @@
-"""Tests for whiz.ai — prompt resolution, subsampling, base64, HTTP mocking.
+"""Tests for wiz.ai — prompt resolution, subsampling, base64, HTTP mocking.
 
 Run with: pytest tests/test_ai.py
 """
@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import ai as AI
+from wiz import ai as AI
 
 
 # ---------- prompt resolution ----------
@@ -118,7 +118,7 @@ def test_plan_task_label_mentions_speaker_and_dedup():
     assert "deduplicated" in label
 
 def test_transcript_text_with_frame_entries():
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=0.0, end=2.0, speaker="Alice", text="hello", frame="seg0001.jpg"),
         FrameEntry(index=2, start=2.0, end=4.0, speaker="Bob", text="world", frame="seg0002.jpg"),
@@ -129,7 +129,7 @@ def test_transcript_text_with_frame_entries():
 
 
 def test_transcript_text_with_merged_tuples():
-    from whiz.merge import WhisperSeg
+    from wiz.merge import WhisperSeg
     entries = [
         (WhisperSeg(start=0.0, end=1.0, text="  hi  "), "Speaker A"),
         (WhisperSeg(start=5.0, end=6.0, text="bye"), "Speaker B"),
@@ -742,7 +742,7 @@ def test_analyze_short_text_single_call(monkeypatch):
 def test_analyze_short_vision_single_call(monkeypatch, tmp_path):
     """With one chunk of entries, vision analyze uses one chat_vision call.
     The prompt carries the always-on Essentials instruction."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=0.0, end=1.0, speaker="A", text="hi", frame="seg0001.jpg"),
         FrameEntry(index=2, start=1.0, end=2.0, speaker="B", text="yo", frame="seg0002.jpg"),
@@ -808,7 +808,7 @@ def test_analyze_long_text_map_reduce(monkeypatch):
 
 def test_analyze_long_vision_map_reduce(monkeypatch, tmp_path):
     """Many entries with frames chunk by entries; each chunk's frames stay local."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=i, start=float(i), end=float(i + 1),
                    speaker="A", text=f"seg {i}", frame=f"seg{i:04d}.jpg")
@@ -1022,7 +1022,7 @@ def test_analyze_progress_callback_invoked(monkeypatch):
 
 def test_frame_manifest_labels_frames_in_order():
     """The manifest labels frames 1..N with timestamp + speaker, in time order."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=603.0, end=605.0, speaker="Alice", text="x", frame="seg0001.jpg"),
         FrameEntry(index=2, start=615.0, end=617.0, speaker="Bob", text="y", frame="seg0002.jpg"),
@@ -1040,7 +1040,7 @@ def test_frame_manifest_labels_frames_in_order():
 
 def test_frame_manifest_skips_entries_without_frames():
     """Entries with no frame path are skipped; numbering is contiguous."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=0.0, end=1.0, speaker="A", text="x", frame="seg0001.jpg"),
         FrameEntry(index=2, start=1.0, end=2.0, speaker="B", text="y", frame=""),  # no frame
@@ -1056,7 +1056,7 @@ def test_frame_manifest_skips_entries_without_frames():
 
 def test_frame_manifest_empty_when_no_frames():
     """No frame-bearing entries → empty manifest string."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=0.0, end=1.0, speaker="A", text="x", frame=""),
         FrameEntry(index=2, start=1.0, end=2.0, speaker="B", text="y", frame=""),
@@ -1067,7 +1067,7 @@ def test_frame_manifest_empty_when_no_frames():
 
 def test_frame_manifest_single_frame_grammar():
     """A single frame uses 'frame' (singular), not 'frames'."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=5.0, end=6.0, speaker="A", text="x", frame="seg0001.jpg"),
     ]
@@ -1078,7 +1078,7 @@ def test_frame_manifest_single_frame_grammar():
 
 def test_analyze_short_vision_single_call_has_manifest(monkeypatch, tmp_path):
     """Single-call vision path prepends the frame manifest to the prompt."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=1, start=10.0, end=11.0, speaker="A", text="hi", frame="seg0001.jpg"),
         FrameEntry(index=2, start=20.0, end=21.0, speaker="B", text="yo", frame="seg0002.jpg"),
@@ -1113,7 +1113,7 @@ def test_analyze_short_vision_single_call_has_manifest(monkeypatch, tmp_path):
 def test_analyze_long_vision_map_reduce_manifest_per_chunk(monkeypatch, tmp_path):
     """Map-reduce vision: each chunk's map prompt carries the manifest for
     its own frames; the manifest uses per-chunk frame numbering (1..N per chunk)."""
-    from whiz.screenshots import FrameEntry
+    from wiz.screenshots import FrameEntry
     entries = [
         FrameEntry(index=i, start=float(i), end=float(i + 1),
                    speaker="A", text=f"seg {i}", frame=f"seg{i:04d}.jpg")

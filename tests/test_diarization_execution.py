@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from whiz import config as cfg
-from whiz import diarize as D
-from whiz import profiles as P
-from whiz import cli
+from wiz import config as cfg
+from wiz import diarize as D
+from wiz import profiles as P
+from wiz import cli
 
 
 @pytest.mark.parametrize(

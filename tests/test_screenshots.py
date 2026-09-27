@@ -1,4 +1,4 @@
-"""Tests for whiz.screenshots — frame naming, manifest round-trip, path helpers.
+"""Tests for wiz.screenshots — frame naming, manifest round-trip, path helpers.
 
 Run with: pytest tests/test_screenshots.py
 """
@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import merge as MR
-from whiz import screenshots as SC
+from wiz import merge as MR
+from wiz import screenshots as SC
 
 
 def _seg(start, end, text="hello"):

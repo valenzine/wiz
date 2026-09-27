@@ -4,9 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.0] - 2026-09-27
+
+### Changed
+
+- Renamed to **wiz**: the command is `wiz` (there is no `whiz` alias), the Python
+  package is `wiz`, settings live in `~/.config/wiz` (override with
+  `WIZ_CONFIG_DIR`, formerly `WHIZ_CONFIG_DIR`) and diarization models in
+  `~/.cache/wiz/diarization`.
+- New logo, and a wave instead of a lightning bolt in the terminal header.
+
+### Added
+
+- The first `wiz` command copies `~/.config/whiz` (settings and voice profiles)
+  and `~/.cache/whiz` (diarization models) to their new locations. The originals
+  are never modified, a location that already exists is never overwritten, and
+  if the copy fails wiz stops with an error rather than starting with empty
+  settings.
+
+### Upgrading
+
+Install wiz with `pipx install git+https://github.com/valenzine/wiz.git`. pipx
+treats it as a new package, so the old `whiz` command stays until you run
+`pipx uninstall whiz`.
+
 ## [0.15.0] - 2026-09-27
 
-First release of **wiz**, Valentin Muro's fork of
+First release of **wiz**, my fork of
 [whiz](https://github.com/ReidenXerx/whiz) by ReidenXerx (MIT).
 
 ### Added

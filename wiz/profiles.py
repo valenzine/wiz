@@ -1,14 +1,14 @@
 """Speaker voice profiles — cross-recording speaker recognition.
 
 When a user names a speaker (via `--name-speakers` or `--speakers-names`),
-whiz can save a *voice profile*: a fixed-size embedding vector for that
+wiz can save a *voice profile*: a fixed-size embedding vector for that
 speaker cluster, computed with the same sherpa-onnx embedding extractor used
 for diarization. On later recordings, each detected cluster's embedding is
 compared (cosine similarity) to the stored profiles, and a name is
 auto-assigned when the best match exceeds ``speaker_match_threshold``
 (config, default 0.8).
 
-Profiles live at ``~/.config/whiz/speakers/<Name>.json``::
+Profiles live at ``~/.config/wiz/speakers/<Name>.json``::
 
     {
       "name": "Alice",
@@ -36,8 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from whiz import config as cfg
-from whiz.diarize import (
+from wiz import config as cfg
+from wiz.diarize import (
     DiarSegment,
     DiarizationProviderError,
     _import_sherpa,
@@ -239,12 +239,12 @@ def compute_speaker_embeddings(
     emb_model = find_embedding_model(config)
     if emb_model is None:
         raise RuntimeError(
-            "Embedding model not found. Run `whiz models download-diarization` first."
+            "Embedding model not found. Run `wiz models download-diarization` first."
         )
 
     sherpa_onnx = _import_sherpa()
 
-    from whiz import ui
+    from wiz import ui
     ui.muted("Computing speaker profile embeddings ...")
     ui.muted(f"  requested provider: {config.diarization_provider}")
     ui.muted(f"  threads: {config.diarization_threads}")
@@ -272,7 +272,7 @@ def compute_speaker_embeddings(
             ) from e
         raise
     dim = extractor.dim
-    sample_rate = 16000  # whiz extracts 16 kHz mono WAV
+    sample_rate = 16000  # wiz extracts 16 kHz mono WAV
 
     samples, sr = _read_wav_pcm(wav)
     if sr != sample_rate:
@@ -416,7 +416,7 @@ def auto_assign_names(
     ``--speakers-names`` to fill in. Returns the name map keyed by
     ``Speaker A/B/...`` labels and the raw per-cluster match info.
     """
-    from whiz.merge import speaker_label
+    from wiz.merge import speaker_label
 
     matches = match_speakers(cluster_embeddings, profiles, threshold)
     name_map: dict[str, str] = {}

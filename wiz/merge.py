@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from whiz.diarize import DiarSegment
+from wiz.diarize import DiarSegment
 
 # Speaker id -> human label: 0 -> "Speaker A", 1 -> "Speaker B", ...
 _SPEAKER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -268,7 +268,7 @@ def _html_escape(text: str) -> str:
 def format_speakers_html(
     merged: list[tuple[WhisperSeg, str]],
     frames_dir: Path | None = None,
-    title: str = "whiz transcript",
+    title: str = "wiz transcript",
     note: str = "",
 ) -> str:
     """Emit a self-contained HTML transcript.

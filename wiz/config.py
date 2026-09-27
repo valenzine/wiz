@@ -1,6 +1,6 @@
-"""Persistent user configuration for whiz.
+"""Persistent user configuration for wiz.
 
-Config lives at ~/.config/whiz/config.toml (created on demand).
+Config lives at ~/.config/wiz/config.toml (created on demand).
 Only Python 3.11+ stdlib tomllib is used for reading; writing is a tiny
 hand-rolled TOML emitter so we don't depend on a third-party package.
 """
@@ -8,13 +8,53 @@ hand-rolled TOML emitter so we don't depend on a third-party package.
 from __future__ import annotations
 
 import os
+import shutil
 import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
-CONFIG_DIR = Path(os.environ.get("WHIZ_CONFIG_DIR", Path.home() / ".config" / "whiz"))
+CONFIG_DIR = Path(os.environ.get("WIZ_CONFIG_DIR", Path.home() / ".config" / "wiz"))
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+CACHE_DIR = Path.home() / ".cache" / "wiz"
+
+# Where this state lived when the project was called whiz.
+LEGACY_CONFIG_DIR = Path.home() / ".config" / "whiz"
+LEGACY_CACHE_DIR = Path.home() / ".cache" / "whiz"
+
+
+def migrate_legacy_dirs() -> list[tuple[Path, Path]]:
+    """Copy the whiz-era config and cache dirs to their wiz locations, once.
+
+    Copied, not moved: an older whiz install (and Mynah, which reads
+    ~/.config/whiz) keeps working, and nothing is lost if wiz is removed.
+    A destination that already exists is never touched. Each copy lands in
+    a temporary sibling first and is renamed into place, so an interrupted
+    copy is retried on the next run instead of leaving a half-copied dir.
+    An explicit WIZ_CONFIG_DIR opts the config dir out of migration.
+
+    Returns the (old, new) pairs that were copied on this call.
+    """
+    pairs = [(LEGACY_CACHE_DIR, CACHE_DIR)]
+    if "WIZ_CONFIG_DIR" not in os.environ:
+        pairs.insert(0, (LEGACY_CONFIG_DIR, CONFIG_DIR))
+    migrated = []
+    for old, new in pairs:
+        if new.exists() or not old.is_dir():
+            continue
+        tmp = new.with_name(new.name + ".migrating")
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+            new.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(old, tmp, symlinks=True)
+            tmp.rename(new)
+        except OSError as e:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise RuntimeError(
+                f"Could not copy {old} to {new}: {e}. Nothing was removed from {old}."
+            ) from e
+        migrated.append((old, new))
+    return migrated
 
 
 @dataclass
@@ -63,7 +103,7 @@ class Config:
     # Remembered answer to the one-time diarization auto-setup prompt.
     # None (unset) => ask on a TTY / proceed automatically when scripted;
     # true/false answers permanently for both. Written by the prompt and
-    # settable by hand: whiz config set auto_diarization_setup=false
+    # settable by hand: wiz config set auto_diarization_setup=false
     auto_diarization_setup: bool | None = None
     # --- AI analysis (Ollama / OpenAI-compatible) ---
     # Base URL of the chat completions endpoint (without /chat/completions).
@@ -156,7 +196,7 @@ def load() -> Config:
 
     A MISSING file means defaults — fine. A CORRUPT file must not be
     silently swallowed into defaults either: that would make every
-    ``whiz config set`` read-modify-write from an empty table and rewrite
+    ``wiz config set`` read-modify-write from an empty table and rewrite
     the file, permanently deleting every key the user had (C1, wave-1
     audit). Raise a RuntimeError naming the file with the fix instead;
     ``main()`` catches RuntimeError and prints it as a clean error.
@@ -211,7 +251,7 @@ def save(cfg: Config) -> Path:
     That is not hypothetical. The config file is shared by several writers that
     do not agree on the schema: the Swift app owns ``dictate_*``, feature
     branches add their own keys (``ocr_*``), and a user may be running a pipx
-    install that is older or newer than the checkout. Any ``whiz config set``
+    install that is older or newer than the checkout. Any ``wiz config set``
     from the wrong one wiped the others' settings without a word.
     """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)

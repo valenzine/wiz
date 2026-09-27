@@ -37,8 +37,8 @@ env/
 .coverage
 htmlcov/
 
-# whiz local config (uncomment to ignore)
-# ~/.config/whiz/uv.lock
+# wiz local config (uncomment to ignore)
+# ~/.config/wiz/uv.lock
 
 # bearing — generated local state (safe to remove via bearing-uninstall)
 .bearing/.gitnexus-*
