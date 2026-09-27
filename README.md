@@ -54,7 +54,6 @@ Most transcription tools stop at text. wiz is the one-command path from a screen
 - [Speaker voice profiles](#speaker-voice-profiles-cross-recording-recognition)
 - [AI analysis](#ai-analysis-auto-detect-summary-action-items-implementation-plans-vision)
 - [Essentials (always on)](#essentials-always-on-concentrated-context-for-a-later-analysis)
-- [Dictation moved to Mynah](#dictation-moved-to-mynah)
 - [Testing](#testing)
 - [License](#license)
 
@@ -634,24 +633,6 @@ wiz analyze recording.mov --plan
 # Paste the Essentials section into a freeform --prompt, e.g.
 wiz analyze recording.mov --prompt "Given these essentials, draft the migration steps. Essentials:\n$(awk '/^## Essentials/{f=1;next} f' recording.analysis.md)\n\nTranscript: {transcript}"
 ```
-
-## Dictation moved to Mynah
-
-whiz's `dictate` command grew into its own product. Talking to your computer and transcribing a recording
-turned out to be two different tools that happened to share a speech engine: one runs for a second
-per file, the other from login to shutdown, with a hotkey, a tray icon and permissions.
-
-**[Mynah](https://github.com/ReidenXerx/mynah)**, by the original whiz author ReidenXerx, is that half — the same engine, the same tuned
-segmentation, the same macOS app, now with a name of its own:
-
-```bash
-pipx install git+https://github.com/ReidenXerx/mynah.git
-mynah setup
-```
-
-Your settings come with it: Mynah's first run imports the `dictate_*` keys from
-`~/.config/whiz/config.toml`. `wiz dictate` keeps working as a pointer for a release or two, then
-goes away.
 
 ## Testing
 

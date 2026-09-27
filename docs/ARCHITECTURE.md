@@ -6,44 +6,13 @@ As of September 2026 wiz is one product: a transcription CLI. A recording goes
 in — audio or video — and a labeled, named, frame-illustrated transcript plus
 an optional AI analysis comes out, all on the user's machine.
 
-Dictation used to live here too. It moved out and became
-[mynah](https://github.com/ReidenXerx/mynah) — a product that runs from login
-to shutdown, with a hotkey, a tray icon and its own release cycle. The things
-this repo used to own for it (the segmentation engine, the tuning contract
-`tuning/tuning.toml`, the golden corpus, the macOS Swift app, the vendored
-whisper.cpp submodule) all moved with it, including their history. This
-document describes what is left, and what the split owed the user on the way
-out.
-
-## The split, and what it owes
-
-Dictation and transcription turned out to be two tools that happened to share
-a speech engine. The handoff is deliberately gentle, because `wiz dictate` is
-in people's muscle memory, their LaunchAgents and their shell history:
-
-- `wiz dictate` (and the `d` alias) still parse and run — for a release or
-  two — and print where it went (`cli.py`, `MYNAH_MOVED`), exiting nonzero.
-- The `dictate_*` config keys stay readable in an existing `config.toml`:
-  `save()` preserves keys it does not know, so nothing is stripped on a
-  routine config write before Mynah's first run has imported them
-  (`config.py`). Mynah reads them once and owns them from then on.
-- `wiz upgrade` lost the extra and the LaunchAgent to look after; it now
-  does the one thing it is still for — reinstall, re-inject the `diarize`
-  extra when that one was already there, re-verify.
-
-The tuning contract and the golden corpus that used to live under `tuning/`
-were about dictation segmentation — utterance ends, energy gates, calibration.
-Nothing in wiz segments audio at session speed anymore; transcription is a
-batch pipeline whose speech segmentation is whisper-cli's VAD plus sherpa-onnx
-diarization. The contract moved to mynah unchanged.
-
 ## The components
 
 One Python package, ~6,000 lines, no compiled parts:
 
 | Module | Role |
 |---|---|
-| `cli.py` | command surface: `transcribe`, `merge`, `analyze`, `models`, `config`, `speakers`, `upgrade`, the `dictate` stub; video-input defaults (speakers/screenshots/name-speakers auto-on) |
+| `cli.py` | command surface: `transcribe`, `merge`, `analyze`, `models`, `config`, `speakers`, `upgrade`; video-input defaults (speakers/screenshots/name-speakers auto-on) |
 | `audio.py` | ffmpeg extraction to 16 kHz mono PCM WAV — the only container whisper-cli accepts |
 | `models.py` | ggml model discovery, alias resolution (`turbo`, `large-v3`), download; the NS-15 preference order |
 | `diarize.py` | sherpa-onnx diarization (pyannote segmentation + 3D-Speaker embedding), model download, the fingerprinted result cache |
@@ -56,9 +25,7 @@ One Python package, ~6,000 lines, no compiled parts:
 
 Everything shells out or calls optional dependencies rather than bundling:
 whisper-cli and ffmpeg from PATH, sherpa-onnx as an optional extra installed
-on demand (with consent), the chat model over HTTP. The only vendored artifact
-left is nothing — the whisper.cpp submodule moved to mynah with the app that
-needed it.
+on demand (with consent), the chat model over HTTP. Nothing is vendored.
 
 ## The pipeline
 
@@ -133,8 +100,7 @@ a coherent visual timeline, not a bag of images); transient HTTP failures
 immediately with the server's body. Pinned by `tests/test_ai.py`.
 
 **Config compatibility.** `config.toml` is written flat; `save()` preserves
-every key it does not know — including the `dictate_*` keys Mynah has not
-imported yet, and anything else a future reader puts there. A new key must
+every key it does not know — anything an older or newer install put there. A new key must
 round-trip through TOML's value space (the reason `None` is omitted, not
 emitted). Pinned by `tests/test_config.py`.
 
@@ -147,17 +113,5 @@ under a second:
 uv run --extra test pytest tests/ -q
 ```
 
-(264 tests at the time of the split.) Filesystem isolation via `monkeypatch`/
+Filesystem isolation via `monkeypatch`/
 `tmp_path` keeps host-installed models out of discovery assertions.
-
-## Where the old contract went
-
-The tuning contract, golden corpus, cross-implementation divergence rules
-(trailing-silence policies, min-utterance gate placement, secondary VAD,
-decoder thresholds) and the Rust core plan all described *dictation
-segmentation across Python/Swift implementations*. That problem — keeping
-independent implementations of one engine from drifting — is now mynah's; its
-`tuning/tuning.toml` carried every value over byte-for-byte at the split. If
-wiz ever grows a second implementation of the pipeline above, the pattern
-moves with the need: constants in a pinned data file, no runtime reads, a
-corpus that refuses to encode a divergence.

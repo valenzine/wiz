@@ -22,6 +22,12 @@ All notable changes to this project are documented here. The format is based on
   if the copy fails wiz stops with an error rather than starting with empty
   settings.
 
+### Removed
+
+- `wiz dictate` (alias `d`), which only pointed to upstream's separate dictation
+  app, and the docs about it. Leftover `dictate_*` keys in an old config file are
+  still preserved untouched.
+
 ### Upgrading
 
 Install wiz with `pipx install git+https://github.com/valenzine/wiz.git`. pipx
