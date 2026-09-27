@@ -90,7 +90,7 @@ assertKitInstalled(ROOT);
 const { withProjectTmpEnv, tmpSpaceReport, enospcHelp, isEnospcError } = await import(
   pathToFileURL(path.join(ROOT, "scripts/lib/project-tmp.mjs")).href
 );
-const { gitnexusSpawn } = await import(
+const { gitnexusSpawn, gitnexusRepoName } = await import(
   pathToFileURL(path.join(ROOT, ".bearing/lib/gitnexus-cmd.mjs")).href
 );
 const { inspectPersistence,
@@ -492,7 +492,7 @@ function git(args) {
 }
 
 function repoName() {
-  return process.env.GITNEXUS_REPO || path.basename(ROOT);
+  return gitnexusRepoName(ROOT);
 }
 
 function currentBranch() {

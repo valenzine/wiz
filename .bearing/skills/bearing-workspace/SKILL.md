@@ -15,8 +15,8 @@ This repo replaces grep-first navigation with a **knowledge graph + embeddings +
 Do not skip steps:
 
 ```
-READ gitnexus://repo/whiz/context   # or npm run bearing:agent-brief (autonomous)
-READ gitnexus://repo/whiz/schema    # before ad-hoc Cypher
+READ gitnexus://repo/wiz/context   # or npm run bearing:agent-brief (autonomous)
+READ gitnexus://repo/wiz/schema    # before ad-hoc Cypher
 → query({search_query, task_context, goal, repo, limit: 5, max_symbols: 12})   # graph + embeddings — orient
 → context({name, include_content: false}) or context({uid, include_content: false})
 → trace({from, to}) or pdg_query({mode})   # known paths, control/data flow when relevant
@@ -65,7 +65,6 @@ Run `npm run bearing:detect-api` to refresh the profile after major server chang
 | Security / taint / injection review | `bearing-security-review` |
 | Research HTTP API change | See **HTTP API routing** above |
 | Tool reference / Cypher / CLI | `bearing-guide` / `bearing-cli` |
-| Area entry points | `.claude/skills/gitnexus-area-<area>/` (mirrored to `.agents/skills/`) |
 | Hook blocked Grep/Read | `bearing-enforcement` (staleness + suspicion fallback) |
 | Full agent contract | `.cursor/rules/bearing.mdc` + `00-bearing-enforcement.mdc` |
 
@@ -82,7 +81,7 @@ query({
   search_query: "how retry/backoff is applied to outbound requests",  // concept, not a keyword
   task_context: "adding a circuit breaker",
   goal: "find existing retry logic to reuse",
-  repo: "whiz",
+  repo: "wiz",
   limit: 5,
   max_symbols: 12
 })

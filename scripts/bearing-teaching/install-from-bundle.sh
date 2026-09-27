@@ -12,7 +12,7 @@ fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "Run from a git repo root (extract archive here first)"
 
-REPO_NAME="${GITNEXUS_REPO_NAME:-$(basename "$ROOT")}"
+REPO_NAME="${GITNEXUS_REPO_NAME:-$(node --input-type=module -e "import { gitnexusRepoName } from './.bearing/lib/gitnexus-cmd.mjs'; console.log(gitnexusRepoName(process.cwd()))")}"
 
 info "Target repo: $REPO_NAME"
 

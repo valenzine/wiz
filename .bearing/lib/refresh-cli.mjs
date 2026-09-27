@@ -41,23 +41,6 @@ function diagnose() {
 }
 
 /**
- * The resolved `gitnexus` invocation for this repo. Mirrors what the npm scripts use so a repo that
- * pinned a local binary is not silently sent to a different version.
- */
-function gitnexusCmd() {
-  const pkgPath = path.join(root, "package.json");
-  try {
-    const scripts = JSON.parse(fs.readFileSync(pkgPath, "utf8")).scripts ?? {};
-    const ref = scripts["bearing:refresh"] || "";
-    const m = ref.match(/(\S*gitnexus(?:@\S+)?)\s+analyze/);
-    if (m) return m[1];
-  } catch {
-    /* no package.json — stealth installs have no npm scripts at all */
-  }
-  return "gitnexus";
-}
-
-/**
  * Is this a stealth install? Read from the manifest, which is the only record of the choice — the
  * absence of npm scripts is suggestive but not proof (a non-node repo has none either).
  */
@@ -70,6 +53,7 @@ function isStealth() {
 }
 
 const { planRefresh } = await lib("refresh-plan.mjs");
+const { gitnexusSpawn } = await lib("gitnexus-cmd.mjs");
 const stale = diagnose();
 const plan = planRefresh(stale, { wantPdg, force, stealth: isStealth() });
 
@@ -78,13 +62,13 @@ if (plan.tier === "none") {
   process.exit(0);
 }
 
-const bin = gitnexusCmd();
+const { command, args: commandArgs } = gitnexusSpawn(plan.args, root);
 console.log(`==> GitNexus refresh [${plan.tier}] — ${plan.why}`);
-console.log(`    ${bin} ${plan.args.join(" ")}`);
+console.log(`    ${command} ${commandArgs.join(" ")}`);
 if (dryRun) process.exit(0);
 
 const startedAt = Date.now();
-const r = spawnSync(bin, plan.args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
+const r = spawnSync(command, commandArgs, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
 const seconds = Math.round((Date.now() - startedAt) / 1000);
 if (r.status !== 0) {
   console.error(`==> refresh failed (exit ${r.status ?? "signal"})`);

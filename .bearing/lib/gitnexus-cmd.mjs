@@ -52,6 +52,19 @@ export function gitnexusCmd(root = process.cwd()) {
   return recordedCmd(root) ?? detectCmd();
 }
 
+/** The repository alias used by both GitNexus and Bearing. */
+export function gitnexusRepoName(root = process.cwd()) {
+  if (process.env.GITNEXUS_REPO) return process.env.GITNEXUS_REPO;
+  try {
+    const config = JSON.parse(fs.readFileSync(path.join(root, '.gitnexusrc'), 'utf8'));
+    const name = config.analyze?.name ?? config.name;
+    if (typeof name === 'string' && name.trim()) return name.trim();
+  } catch {
+    // No project-local alias; GitNexus defaults to the directory name.
+  }
+  return path.basename(root);
+}
+
 /**
  * Split into the shape spawnSync wants, with any extra args appended.
  * @param {string[]} args e.g. ['--version']

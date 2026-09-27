@@ -8,4 +8,9 @@ export TMPDIR="$TMP"
 export TEMP="$TMP"
 export TMP="$TMP"
 mkdir -p "$TMPDIR"
+if [[ "${1:-}" == "gitnexus" ]]; then
+  shift
+  read -r -a GITNEXUS_CMD <<< "$(node "$ROOT/.bearing/lib/gitnexus-cmd.mjs")"
+  exec "${GITNEXUS_CMD[@]}" "$@"
+fi
 exec "$@"
