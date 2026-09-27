@@ -365,7 +365,7 @@ Prefer to do it yourself (e.g. before an offline session)? The manual equivalent
 
 ```bash
 # 1. Install the optional dependency into wiz's environment
-pipx inject transcript-wiz 'sherpa-onnx>=1.13.6'
+pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6'
 
 # 2. Download the diarization models (~90 MB total)
 wiz models download-diarization

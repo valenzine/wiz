@@ -33,8 +33,10 @@ PIPX_PACKAGE = "transcript-wiz"
 DIARIZE_REQUIREMENT = "sherpa-onnx>=1.13.6"  # first with window_shift_ratio
 # The manual install command shown in hints. It injects the requirement
 # itself rather than 'transcript-wiz[diarize]', so pip never resolves a
-# package name on PyPI for it.
-DIARIZE_INJECT = f"pipx inject {PIPX_PACKAGE} '{DIARIZE_REQUIREMENT}'"
+# package name on PyPI for it. --force because pipx skips a package that is
+# already installed whatever the spec says, so without it the hint could not
+# upgrade a sherpa-onnx older than the minimum.
+DIARIZE_INJECT = f"pipx inject --force {PIPX_PACKAGE} '{DIARIZE_REQUIREMENT}'"
 
 
 class DiarizationUnavailable(RuntimeError):
@@ -379,7 +381,8 @@ def run_diarization(
             window_shift_ratio=config.diarization_window_shift,
         )
     except TypeError as e:  # an environment still on sherpa-onnx < 1.13.6
-        raise RuntimeError(
+        # A setup problem, not a transient failure: callers degrade on it.
+        raise DiarizationUnavailable(
             f"This sherpa-onnx is too old (window shift needs 1.13.6 or newer). "
             f"Upgrade it with: {DIARIZE_INJECT}  ({e})"
         ) from e

@@ -389,7 +389,7 @@ def test_too_old_sherpa_says_how_to_upgrade(tmp_path, monkeypatch):
         return object()
 
     _window_shift_sherpa(tmp_path, monkeypatch, old_pyannote)
-    with pytest.raises(RuntimeError, match=r"1\.13\.6.*pipx inject transcript-wiz 'sherpa-onnx>=1\.13\.6'"):
+    with pytest.raises(D.DiarizationUnavailable, match=r"1\.13\.6.*pipx inject --force transcript-wiz 'sherpa-onnx>=1\.13\.6'"):
         D.run_diarization(tmp_path / "episode.wav", cfg.Config(), use_cache=False)
 
 
