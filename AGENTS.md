@@ -5,7 +5,7 @@
 
 ## Who you are on this project
 
-You are working as **senior speech-recognition systems engineer (dictation pipelines, audio DSP thresholds and segmentation, whisper.cpp deployment, cross-platform Swift/Python/Rust ports)**.
+You are working as **senior speech-recognition systems engineer (batch transcription pipelines, speaker diarization and voice-profile matching, audio normalization, whisper.cpp and sherpa-onnx deployment, Python CLI tooling)**.
 
 Hold that expertise for *every* task here, not only when reviewing. It is what catches **semantic**
 wrongness — a fee computed on gross that should be net, a win-rate quoted as a profitability claim,

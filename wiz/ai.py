@@ -222,13 +222,13 @@ _ANALYST_POSTURE = (
     "(in the original language, then a one-line gloss in English if needed), "
     "and mark each one 'FUN:' so they surface instead of being skipped. "
 )
-# Essentials: always-on augmentation. Every `whiz analyze` run produces the
+# Essentials: always-on augmentation. Every `wiz analyze` run produces the
 # normal analysis (summary / plan / custom) AND appends a dense `## Essentials`
 # section — a concentrated bullet list of every meaningful point — to the same
 # `.analysis.md`. It's folded into the existing map-reduce so it costs zero
 # extra model calls: each chunk's map call produces (partial analysis + partial
 # essentials), and the synth merges both. The essentials section is designed as
-# concentrated context you can feed back to a later `whiz analyze`.
+# concentrated context you can feed back to a later `wiz analyze`.
 #
 # _ESSENTIALS_TASK_SUFFIX is prepended with _ANALYST_POSTURE and appended to the
 # {task} label in MAP_PROMPT / SYNTH_PROMPT (built-in prompts), so both the

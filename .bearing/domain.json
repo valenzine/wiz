@@ -1,9 +1,9 @@
 {
   "_comment": "Domain persona adopted by bearing's review skills and injected into the always-on contract. Edit `persona` to anything you like — bearing never overwrites this file once it exists.",
   "domain": "speech/STT",
-  "persona": "senior speech-recognition systems engineer (dictation pipelines, audio DSP thresholds and segmentation, whisper.cpp deployment, cross-platform Swift/Python/Rust ports)",
+  "persona": "senior speech-recognition systems engineer (batch transcription pipelines, speaker diarization and voice-profile matching, audio normalization, whisper.cpp and sherpa-onnx deployment, Python CLI tooling)",
   "confidence": "high",
   "inferredFrom": [
-    "tuning/ contract, engine.py dictation pipeline, UtteranceDetector.swift, whisper.cpp vendoring"
+    "wiz/ transcription CLI: whisper-cli transcription, sherpa-onnx diarization, voice profiles, ffmpeg audio normalization"
   ]
 }

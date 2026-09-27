@@ -1,20 +1,94 @@
-"""Persistent user configuration for whiz.
+"""Persistent user configuration for wiz.
 
-Config lives at ~/.config/whiz/config.toml (created on demand).
+Config lives at ~/.config/wiz/config.toml (created on demand).
 Only Python 3.11+ stdlib tomllib is used for reading; writing is a tiny
 hand-rolled TOML emitter so we don't depend on a third-party package.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
-CONFIG_DIR = Path(os.environ.get("WHIZ_CONFIG_DIR", Path.home() / ".config" / "whiz"))
+# An explicitly chosen config dir is used as-is, and never migrated. The
+# whiz-era WHIZ_CONFIG_DIR still counts, so a custom location keeps working.
+_EXPLICIT_CONFIG_DIR = os.environ.get("WIZ_CONFIG_DIR") or os.environ.get("WHIZ_CONFIG_DIR")
+CONFIG_DIR = Path(_EXPLICIT_CONFIG_DIR or Path.home() / ".config" / "wiz")
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+CACHE_DIR = Path.home() / ".cache" / "wiz"
+
+# Where this state lived when the project was called whiz.
+LEGACY_CONFIG_DIR = Path.home() / ".config" / "whiz"
+LEGACY_CACHE_DIR = Path.home() / ".cache" / "whiz"
+
+
+@contextlib.contextmanager
+def _exclusive_lock(directory: Path) -> Iterator[None]:
+    """Hold an exclusive lock on *directory* while copying into it.
+
+    The OS releases the lock if the process dies, so a killed copy never
+    leaves a stale lock behind. Without fcntl (not POSIX) there is no lock;
+    the copy still works, it just isn't protected against a parallel run.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def migrate_legacy_dirs() -> Iterator[tuple[Path, Path]]:
+    """Copy the whiz-era config and cache dirs to their wiz locations, once.
+
+    Yields each (old, new) pair right after it's copied, so a later failure
+    can't hide a copy that already happened.
+
+    Copied, not moved: an older whiz install keeps working, and nothing is
+    lost if wiz is removed. A destination that already exists is never
+    touched, and an explicit config dir (WIZ_CONFIG_DIR or the old
+    WHIZ_CONFIG_DIR) is never migrated.
+
+    The copy runs under a lock on the parent dir and lands in a fixed temp
+    name that is renamed into place. A second wiz started meanwhile waits,
+    then finds the copy done; a temp dir left by a killed run is cleared by
+    the next one (safe, because only the lock holder copies).
+    """
+    pairs = [(LEGACY_CACHE_DIR, CACHE_DIR)]
+    if not _EXPLICIT_CONFIG_DIR:
+        pairs.insert(0, (LEGACY_CONFIG_DIR, CONFIG_DIR))
+    for old, new in pairs:
+        if new.exists() or not old.is_dir():
+            continue
+        tmp = new.with_name(f".{new.name}.migrating")
+        try:
+            new.parent.mkdir(parents=True, exist_ok=True)
+            with _exclusive_lock(new.parent):
+                if new.exists():
+                    continue  # another wiz finished this copy while we waited
+                try:
+                    shutil.rmtree(tmp, ignore_errors=True)
+                    shutil.copytree(old, tmp, symlinks=True)
+                    tmp.rename(new)
+                except BaseException:
+                    shutil.rmtree(tmp, ignore_errors=True)
+                    raise
+        except OSError as e:
+            raise RuntimeError(
+                f"Could not copy {old} to {new}: {e}. Nothing was removed from {old}. "
+                f"To skip this copy, create {new} yourself (mkdir -p {new}) and run wiz again."
+            ) from e
+        yield old, new
 
 
 @dataclass
@@ -63,7 +137,7 @@ class Config:
     # Remembered answer to the one-time diarization auto-setup prompt.
     # None (unset) => ask on a TTY / proceed automatically when scripted;
     # true/false answers permanently for both. Written by the prompt and
-    # settable by hand: whiz config set auto_diarization_setup=false
+    # settable by hand: wiz config set auto_diarization_setup=false
     auto_diarization_setup: bool | None = None
     # --- AI analysis (Ollama / OpenAI-compatible) ---
     # Base URL of the chat completions endpoint (without /chat/completions).
@@ -80,10 +154,6 @@ class Config:
     speaker_match_threshold: float = 0.8
     # When True, save a voice profile for each named speaker after transcription/merge.
     save_voice_profiles: bool = True
-    # Dictation used to live here as dictate_* keys. It is Mynah now
-    # (github.com/ReidenXerx/mynah), which reads them out of this file once and
-    # then keeps its own. save() preserves keys it does not know, so an existing
-    # config file keeps them until Mynah has imported them.
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,9 +175,8 @@ def _escape_toml_string(value: str) -> str:
     Order matters: backslash first (or its own output would be re-escaped
     by later steps), then the quote, then control characters — a raw
     ``\n`` inside a quoted string makes the file invalid TOML for the
-    NEXT ``load()`` of every command (C1, wave-1 audit; the Swift reader
-    drops the line outright). Multi-line prompts saved from the settings
-    window are the known trigger.
+    NEXT ``load()`` of every command (C1, wave-1 audit). Multi-line values
+    such as AI prompts are the known trigger.
     """
     return (
         value.replace("\\", "\\\\")
@@ -156,7 +225,7 @@ def load() -> Config:
 
     A MISSING file means defaults — fine. A CORRUPT file must not be
     silently swallowed into defaults either: that would make every
-    ``whiz config set`` read-modify-write from an empty table and rewrite
+    ``wiz config set`` read-modify-write from an empty table and rewrite
     the file, permanently deleting every key the user had (C1, wave-1
     audit). Raise a RuntimeError naming the file with the fix instead;
     ``main()`` catches RuntimeError and prints it as a clean error.
@@ -209,9 +278,9 @@ def save(cfg: Config) -> Path:
     silently deletes every key the running build has never heard of.
 
     That is not hypothetical. The config file is shared by several writers that
-    do not agree on the schema: the Swift app owns ``dictate_*``, feature
-    branches add their own keys (``ocr_*``), and a user may be running a pipx
-    install that is older or newer than the checkout. Any ``whiz config set``
+    do not agree on the schema: older installs left their own keys, feature
+    branches add theirs (``ocr_*``), and a user may be running a pipx
+    install that is older or newer than the checkout. Any ``wiz config set``
     from the wrong one wiped the others' settings without a word.
     """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)

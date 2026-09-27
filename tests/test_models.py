@@ -1,4 +1,4 @@
-"""Tests for whiz.models — alias resolution and best-pick preference.
+"""Tests for wiz.models — alias resolution and best-pick preference.
 
 Run with: pytest tests/test_models.py
 """
@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whiz import config as cfg
-from whiz import models as M
+from wiz import config as cfg
+from wiz import models as M
 
 
 def _make_config(search_dirs: list[Path]) -> cfg.Config:
@@ -269,7 +269,7 @@ def test_pick_best_prefers_higher_class_quantized_over_tiny(tmp_path, monkeypatc
 
 
 def test_download_filename_expands_turbo_to_unquantized():
-    # `whiz models download turbo` used to fetch ggml-turbo.bin, which does
+    # `wiz models download turbo` used to fetch ggml-turbo.bin, which does
     # not exist upstream — expansion must land on the unquantized class.
     assert M._resolve_download_filename("turbo") == "ggml-large-v3-turbo.bin"
 

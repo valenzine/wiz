@@ -3,7 +3,7 @@
 sherpa-onnx combines a pyannote segmentation model with a speaker-embedding
 extractor and clustering to produce (start, end, speaker) segments. This
 module lazily imports the sherpa_onnx package (an optional dependency,
-installed via `pipx inject whiz sherpa-onnx`), locates the two required
+installed via ``DIARIZE_INJECT``), locates the two required
 model files, downloads them if needed, and returns structured segments.
 """
 
@@ -18,9 +18,24 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from whiz import config as cfg
+from wiz import config as cfg
 
 _DIAR_CACHE_VERSION = 2
+
+# The published package name. PyPI's "wiz" belongs to an unrelated project,
+# so wiz is distributed as transcript-wiz; the command and import stay "wiz".
+# pipx names its environment after this, so every pipx command needs it.
+PIPX_PACKAGE = "transcript-wiz"
+# The diarize extra's requirement. The auto-setup installs exactly this, so
+# the automatic and manual paths agree; a bare `pip install sherpa-onnx` could
+# land an older version than the declared minimum. Keep in sync with
+# [project.optional-dependencies] diarize in pyproject.toml (a test checks).
+DIARIZE_REQUIREMENT = "sherpa-onnx>=1.10"
+# The manual install command shown in hints. It injects the requirement
+# itself rather than 'transcript-wiz[diarize]', so pip never resolves a
+# package name on PyPI for it.
+DIARIZE_INJECT = f"pipx inject {PIPX_PACKAGE} '{DIARIZE_REQUIREMENT}'"
+
 
 class DiarizationUnavailable(RuntimeError):
     """Diarization cannot run: missing package/models or invalid model config.
@@ -60,7 +75,7 @@ class DiarSegment:
 
 
 def _default_diarization_dir() -> Path:
-    return Path.home() / ".cache" / "whiz" / "diarization"
+    return cfg.CACHE_DIR / "diarization"
 
 
 def _import_sherpa():
@@ -70,7 +85,7 @@ def _import_sherpa():
     except ImportError as e:
         raise DiarizationUnavailable(
             "sherpa_onnx is not installed.\n"
-            "Install it into whiz with:  pipx inject whiz sherpa-onnx\n"
+            f"Install it into wiz with:  {DIARIZE_INJECT}\n"
             f"(underlying error: {e})"
         ) from e
     return sherpa_onnx
@@ -121,7 +136,7 @@ def find_embedding_model(config: cfg.Config) -> Path | None:
 
 
 def _download(url: str, target: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "whiz/0.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "wiz/0.3"})
     with urllib.request.urlopen(req) as resp:  # noqa: S310 - trusted release URL
         if resp.status >= 400:
             raise RuntimeError(f"Download failed: HTTP {resp.status} for {url}")
@@ -249,7 +264,7 @@ def _write_diarization_cache(
     emb_model: Path | None = None,
     window_shift_ratio: float = 0.1,
 ) -> Path:
-    """Persist the diarization result so later `whiz merge` runs can reuse it.
+    """Persist the diarization result so later `wiz merge` runs can reuse it.
 
     Records the input identity (H1) — source size+mtime and the resolved model
     paths — alongside the params so a later load can tell a matching cache
@@ -312,7 +327,7 @@ def run_diarization(
     emb_model = find_embedding_model(config)
     if seg_model is None or emb_model is None:
         raise DiarizationUnavailable(
-            "Diarization models not found. Run `whiz models download-diarization` first."
+            "Diarization models not found. Run `wiz models download-diarization` first."
         )
 
     cache_input = cache_source or wav
@@ -324,7 +339,7 @@ def run_diarization(
             window_shift_ratio=config.diarization_window_shift,
         )
         if cached is not None:
-            from whiz import ui
+            from wiz import ui
             ui.muted(
                 f"Reusing diarization cache ({len(cached)} segments, "
                 f"num_speakers={num_speakers or 'auto'}, threshold={threshold}): "
@@ -346,7 +361,7 @@ def run_diarization(
 
     sherpa_onnx = _import_sherpa()
 
-    from whiz import ui
+    from wiz import ui
     ui.muted("Loading sherpa-onnx diarization ...")
     if config.diarization_provider != "cpu":
         ui.status(
@@ -361,7 +376,7 @@ def run_diarization(
     window_shift = config.diarization_window_shift
     if window_shift == 0.1:
         # sherpa-onnx's own default; keep the call that works on every
-        # version whiz supports (the kwarg arrived in sherpa-onnx 1.13.6).
+        # version wiz supports (the kwarg arrived in sherpa-onnx 1.13.6).
         seg_cfg = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(str(seg_model))
     else:
         try:
@@ -422,10 +437,10 @@ def run_diarization(
     if sample_rate != sd.sample_rate:
         raise RuntimeError(
             f"Expected {sd.sample_rate} Hz audio, got {sample_rate} Hz. "
-            "whiz should have extracted 16kHz audio."
+            "wiz should have extracted 16kHz audio."
         )
 
-    from whiz import ui
+    from wiz import ui
     ui.muted("Running speaker diarization ...")
     ui.muted(f"  requested provider: {config.diarization_provider}")
     ui.muted(f"  threads: {config.diarization_threads}")

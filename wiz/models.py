@@ -1,7 +1,7 @@
 """Model discovery, alias resolution, and download.
 
 whisper-cli (whisper.cpp) ships ggml models named like `ggml-large-v3-q5_0.bin`.
-whiz scans known directories for these, indexes them by a friendly alias,
+wiz scans known directories for these, indexes them by a friendly alias,
 and can download new ones from the HuggingFace whisper.cpp repo.
 """
 
@@ -15,7 +15,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from whiz import config as cfg
+from wiz import config as cfg
 
 HF_BASE = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 # VAD models live in a separate repo and are versioned.
@@ -180,7 +180,7 @@ def pick_best(config: cfg.Config) -> Path | None:
 def _resolve_download_filename(model: str) -> str:
     """Expand a short alias to a canonical filename (NS-15).
 
-    ``whiz models download turbo`` must fetch ``ggml-large-v3-turbo.bin``;
+    ``wiz models download turbo`` must fetch ``ggml-large-v3-turbo.bin``;
     the literal ``ggml-turbo.bin`` does not exist upstream and the download
     404s. Expansion walks PREFERENCE — exact alias, then short alias, then
     prefix — so ``turbo`` resolves to the unquantized class, never a
@@ -240,7 +240,7 @@ def download(model: str, config: cfg.Config, dest_dir: Path | None = None) -> Pa
     url = f"{HF_BASE}/{filename}"
     # urllib doesn't follow HF redirects to CDN by default; use a redirect-aware fetch.
     print(f"Downloading {filename} from {url} ...", flush=True)
-    req = urllib.request.Request(url, headers={"User-Agent": "whiz/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "wiz/0.1"})
     with urllib.request.urlopen(req) as resp:  # noqa: S310 - trusted HF URL
         if resp.status >= 400:
             raise RuntimeError(f"Download failed: HTTP {resp.status} for {url}")
@@ -318,7 +318,7 @@ def download_vad(config: cfg.Config, dest_dir: Path | None = None, version: str 
         raise FileExistsError(f"Already exists: {target}")
     url = f"{VAD_HF_BASE}/{filename}"
     print(f"Downloading {filename} from {url} ...", flush=True)
-    req = urllib.request.Request(url, headers={"User-Agent": "whiz/0.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "wiz/0.2"})
     with urllib.request.urlopen(req) as resp:  # noqa: S310 - trusted HF URL
         if resp.status >= 400:
             raise RuntimeError(f"Download failed: HTTP {resp.status} for {url}")

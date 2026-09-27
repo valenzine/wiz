@@ -4,9 +4,50 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.0] - 2026-09-27
+
+### Changed
+
+- Renamed to **wiz**: the command is `wiz` (there is no `whiz` alias), the Python
+  package is `wiz`, settings live in `~/.config/wiz` (override with
+  `WIZ_CONFIG_DIR`; the old `WHIZ_CONFIG_DIR` still works, and a custom
+  location set either way is used as-is, not copied) and diarization models in
+  `~/.cache/wiz/diarization`.
+- The package is published as `transcript-wiz`, because `wiz` is taken on PyPI
+  by an unrelated project. pipx lists it under that name, and `pipx inject` /
+  `pipx uninstall` use it; the command is still `wiz`.
+- New logo, and a wave instead of a lightning bolt in the terminal header.
+
+### Added
+
+- The first `wiz` command copies `~/.config/whiz` (settings and voice profiles)
+  and `~/.cache/whiz` (diarization models) to their new locations. The originals
+  are never modified, a location that already exists is never overwritten, and
+  if the copy fails wiz stops with an error rather than starting with empty
+  settings.
+
+### Removed
+
+- `wiz dictate` (alias `d`), which only pointed to upstream's separate dictation
+  app, and the docs about it. Leftover `dictate_*` keys in an old config file are
+  still preserved untouched.
+
+### Upgrading
+
+- Diarization caches written before this release don't match anymore, because
+  the cache records where the models live and they moved to `~/.cache/wiz`.
+  The first run on each recording diarizes again and writes a new cache.
+- Running the old `whiz upgrade` installs `transcript-wiz` without the
+  diarization library. wiz offers to install it the first time a run needs it,
+  or install it yourself with `pipx inject transcript-wiz 'sherpa-onnx>=1.10'`.
+
+Install wiz with `pipx install git+https://github.com/valenzine/wiz.git`. pipx
+treats it as a new package (`transcript-wiz`), so the old `whiz` command stays until you run
+`pipx uninstall whiz`.
+
 ## [0.15.0] - 2026-09-27
 
-First release of **wiz**, Valentin Muro's fork of
+First release of **wiz**, my fork of
 [whiz](https://github.com/ReidenXerx/whiz) by ReidenXerx (MIT).
 
 ### Added
