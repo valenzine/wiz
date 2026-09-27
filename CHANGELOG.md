@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.17.1] - 2026-09-27
+
+### Fixed
+
+- When I explicitly request speaker diarization and it cannot produce real speaker
+  labels, `transcribe` and `merge` now exit with an error even if they wrote
+  generic-label outputs. Video's automatic diarization still degrades with a hint.
+
 ## [0.17.0] - 2026-09-27
 
 ### Changed

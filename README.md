@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.17.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.17.1-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -217,7 +217,7 @@ wiz transcribe --dry-run recording.mov             # see what it would run, with
 
 Run `wiz transcribe --help` for the full flag reference.
 
-Exit codes: when an explicit `--speakers` degrades (sherpa-onnx or its models unavailable) and the run writes no speaker-labeled artifacts at all, `transcribe` exits nonzero — the same contract as `merge`, so `|| alert` wrappers can tell. A degraded run that does write generic-label outputs (or keeps existing named ones) still exits 0.
+Exit codes: if I explicitly pass `--speakers` and diarization produces no real speaker labels, `transcribe` and `merge` exit nonzero, even if they wrote generic-label outputs. If video auto-enables diarization without `--speakers`, the run can still succeed with a hint when speaker labels are unavailable.
 
 ### `wiz merge <file>`
 
