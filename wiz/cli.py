@@ -8,7 +8,6 @@ Subcommands:
   wiz models download N   Download a model from HuggingFace.
   wiz speakers list       List stored voice profiles.
   wiz analyze <file>      AI-analyze a prior transcript (+ frames).
-  wiz dictate             Moved to Mynah: github.com/ReidenXerx/mynah
   wiz config show         Show current config.
   wiz config edit         Open config in $EDITOR.
   wiz config set K=V      Set a config value.
@@ -2235,27 +2234,6 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     return 0
 
 
-# ---------- dictate (moved to Mynah) ----------
-
-# Dictation left wiz for https://github.com/ReidenXerx/mynah. The command stays
-# for a release or two, because `wiz dictate` is in people's muscle memory, in
-# their LaunchAgent, and in a shell history they will page back through: it
-# should say where its replacement went rather than "unknown command".
-MYNAH_MOVED = """\
-Dictation moved to Mynah — its own tool now.
-
-  pipx install git+https://github.com/ReidenXerx/mynah.git
-  mynah setup
-
-Your settings come with it: Mynah's first run reads the dictate_* keys out of
-whiz's config.toml. https://duduphudu.app/mynah/
-
-wiz still transcribes recordings: wiz transcribe, wiz analyze, wiz merge."""
-
-
-def cmd_dictate(args: argparse.Namespace) -> int:
-    print(MYNAH_MOVED, file=sys.stderr)
-    return 1
 
 
 # ---------- speakers (voice profiles) ----------
@@ -2562,7 +2540,6 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     else:
         ui.muted("diarize extra not installed — skipping")
 
-    ui.muted("\nDictation lives in Mynah now: https://github.com/ReidenXerx/mynah")
     return 0
 
 
@@ -2682,10 +2659,6 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
     sm.set_defaults(func=cmd_speakers_match)
 
-    # dictate
-    dt = sub.add_parser("dictate", aliases=["d"], help="Moved to Mynah (github.com/ReidenXerx/mynah)")
-    dt.add_argument("rest", nargs="*", help=argparse.SUPPRESS)
-    dt.set_defaults(func=cmd_dictate)
 
     # config
     cp = sub.add_parser("config", aliases=["c"], help="View or edit configuration")
@@ -2697,7 +2670,7 @@ def build_parser() -> argparse.ArgumentParser:
     cs.set_defaults(func=cmd_config_set)
 
     # upgrade
-    up = sub.add_parser("upgrade", aliases=["up"], help="One-command upgrade: reinstall wiz from git, refresh the dictate extra if installed, restart the background dictation service if installed, and re-verify. Handles the full update dance so you don't need manual pipx/service-restart steps.")
+    up = sub.add_parser("upgrade", aliases=["up"], help="One-command upgrade: reinstall wiz from git and refresh the diarize extra if it was installed.")
     up.set_defaults(func=cmd_upgrade)
 
     return p

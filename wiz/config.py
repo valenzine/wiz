@@ -26,8 +26,8 @@ LEGACY_CACHE_DIR = Path.home() / ".cache" / "whiz"
 def migrate_legacy_dirs() -> list[tuple[Path, Path]]:
     """Copy the whiz-era config and cache dirs to their wiz locations, once.
 
-    Copied, not moved: an older whiz install (and Mynah, which reads
-    ~/.config/whiz) keeps working, and nothing is lost if wiz is removed.
+    Copied, not moved: an older whiz install keeps working, and nothing is
+    lost if wiz is removed.
     A destination that already exists is never touched. Each copy lands in
     a temporary sibling first and is renamed into place, so an interrupted
     copy is retried on the next run instead of leaving a half-copied dir.
@@ -120,10 +120,6 @@ class Config:
     speaker_match_threshold: float = 0.8
     # When True, save a voice profile for each named speaker after transcription/merge.
     save_voice_profiles: bool = True
-    # Dictation used to live here as dictate_* keys. It is Mynah now
-    # (github.com/ReidenXerx/mynah), which reads them out of this file once and
-    # then keeps its own. save() preserves keys it does not know, so an existing
-    # config file keeps them until Mynah has imported them.
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -145,9 +141,8 @@ def _escape_toml_string(value: str) -> str:
     Order matters: backslash first (or its own output would be re-escaped
     by later steps), then the quote, then control characters — a raw
     ``\n`` inside a quoted string makes the file invalid TOML for the
-    NEXT ``load()`` of every command (C1, wave-1 audit; the Swift reader
-    drops the line outright). Multi-line prompts saved from the settings
-    window are the known trigger.
+    NEXT ``load()`` of every command (C1, wave-1 audit). Multi-line values
+    such as AI prompts are the known trigger.
     """
     return (
         value.replace("\\", "\\\\")
@@ -249,8 +244,8 @@ def save(cfg: Config) -> Path:
     silently deletes every key the running build has never heard of.
 
     That is not hypothetical. The config file is shared by several writers that
-    do not agree on the schema: the Swift app owns ``dictate_*``, feature
-    branches add their own keys (``ocr_*``), and a user may be running a pipx
+    do not agree on the schema: older installs left their own keys, feature
+    branches add theirs (``ocr_*``), and a user may be running a pipx
     install that is older or newer than the checkout. Any ``wiz config set``
     from the wrong one wiped the others' settings without a word.
     """

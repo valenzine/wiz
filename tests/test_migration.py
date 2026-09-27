@@ -33,7 +33,7 @@ def test_copies_profiles_config_and_models_and_keeps_originals(dirs):
     assert (new_cfg / "speakers" / "Axel.json").read_text(encoding="utf-8") == '{"name": "Axel"}'
     assert (new_cfg / "config.toml").read_text(encoding="utf-8") == 'model = "turbo"\n'
     assert (new_cache / "diarization" / "model.onnx").read_bytes() == b"model"
-    # Copied, not moved: old whiz installs and Mynah still find their data.
+    # Copied, not moved: an old whiz install still finds its data.
     assert (old_cfg / "speakers" / "Axel.json").exists()
     assert (old_cache / "diarization" / "model.onnx").exists()
     # Runs once: a second call is a no-op.
