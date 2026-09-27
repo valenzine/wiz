@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whiz"
-version = "0.14.0"
+version = "0.15.0"
 description = "A transcription CLI for meetings, screen recordings, and interviews — powered by whisper.cpp, with diarization, speaker naming, screenshots, HTML transcripts, and auto-detecting AI analysis (summary, action items, implementation plans, session notes)."
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "ReidenXerx" }]
+authors = [{ name = "Valentin Muro" }, { name = "ReidenXerx" }]
 requires-python = ">=3.11"
 keywords = ["whisper", "whisper.cpp", "speech-to-text", "transcription", "cli", "ffmpeg", "diarization", "speakers", "sherpa-onnx", "rich", "ollama", "ai-analysis", "implementation-plan"]
 classifiers = [
@@ -33,9 +33,9 @@ test = ["pytest>=7"]
 diarize = ["sherpa-onnx>=1.10"]
 
 [project.urls]
-Homepage = "https://github.com/ReidenXerx/whiz"
-Repository = "https://github.com/ReidenXerx/whiz"
-Issues = "https://github.com/ReidenXerx/whiz/issues"
+Homepage = "https://github.com/valenzine/wiz"
+Repository = "https://github.com/valenzine/wiz"
+Issues = "https://github.com/valenzine/wiz/issues"
 
 [project.scripts]
 whiz = "whiz.cli:main"

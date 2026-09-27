@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.14.0-F0A32E)](https://github.com/ReidenXerx/whiz/releases)
+[![Version](https://img.shields.io/badge/version-0.15.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -18,7 +18,7 @@ From audio or video to a labeled, named, frame-illustrated transcript — in one
 whiz transcribe recording.mov
 ```
 
-**[duduphudu.app/whiz](https://duduphudu.app/whiz/)** — what one command does, and what it costs you in privacy (nothing)
+**wiz** is Valentin Muro's fork of [whiz](https://github.com/ReidenXerx/whiz) by ReidenXerx. The command is still `whiz` for now.
 
 </div>
 
@@ -92,14 +92,14 @@ For the full set of flags, run `whiz transcribe --help`, `whiz merge --help`, or
 ## Install
 
 ```bash
-pipx install git+https://github.com/ReidenXerx/whiz.git
+pipx install git+https://github.com/valenzine/wiz.git
 ```
 
 Or from a clone:
 
 ```bash
-git clone https://github.com/ReidenXerx/whiz.git
-cd whiz
+git clone https://github.com/valenzine/wiz.git
+cd wiz
 pipx install .
 ```
 
@@ -213,7 +213,7 @@ Exit codes: when an explicit `--speakers` degrades (sherpa-onnx or its models un
 
 ### `whiz merge <file>`
 
-Re-run only diarization + the merge against an existing whisper JSON, skipping the expensive transcription. Lets you tune speaker count / threshold / names cheaply after a first run. Diarization results are cached in `<file>.wav.diar.json`, so a second `whiz merge` with the same `--speakers`/`--cluster-threshold` reuses the cache and skips the embedding pass — only the cheap merge step runs. Changing either parameter re-runs diarization and overwrites the cache.
+Re-run only diarization + the merge against an existing whisper JSON, skipping the expensive transcription. Lets you tune speaker count / threshold / names cheaply after a first run. Diarization results are cached next to the media (`<file>.wav.diar.json` for video, `<file>.diar.json` for audio such as `recording.mp3.diar.json`), so a second `whiz merge` with the same `--speakers`/`--cluster-threshold`/`--diarization-window-shift` reuses the cache and skips the embedding pass — only the cheap merge step runs. Changing any of them re-runs diarization and overwrites the cache. Provider and thread count don't affect the result, so changing them still reuses the cache.
 
 ```bash
 whiz merge --speakers 4 recording.mov
@@ -303,6 +303,11 @@ num_speakers = 0
 cluster_threshold = 0.9
 diarization_segmentation_model = ""
 diarization_embedding_model = ""
+# sherpa-onnx execution: "cpu" or "coreml", inference threads,
+# and Pyannote window shift (0 < x <= 1; larger = faster, coarser)
+diarization_provider = "cpu"
+diarization_threads = 1
+diarization_window_shift = 0.1
 # Remembered answer to the one-time diarization setup prompt
 # (unset = ask once on a TTY / auto-allow when scripted)
 auto_diarization_setup = true
@@ -379,6 +384,10 @@ whiz transcribe --speakers --cluster-threshold 0.95 call.m4a
 
 # Name the speakers interactively after transcription
 whiz transcribe --speakers 4 --name-speakers meeting.mov
+
+# Faster diarization: more threads, coarser segmentation window shift
+# (--diarization-window-shift > 0.1 needs sherpa-onnx >= 1.13.6)
+whiz transcribe --speakers 2 --diarization-threads 8 --diarization-window-shift 0.2 episode.mp3
 
 # Name speakers non-interactively (assigned by total talk time, most talkative first)
 whiz transcribe recording.mov --speakers-names Alice,Bob,Carol,Dave
@@ -627,7 +636,7 @@ whiz analyze recording.mov --prompt "Given these essentials, draft the migration
 turned out to be two different tools that happened to share a speech engine: one runs for a second
 per file, the other from login to shutdown, with a hotkey, a tray icon and permissions.
 
-**[Mynah](https://github.com/ReidenXerx/mynah)** is that half — the same engine, the same tuned
+**[Mynah](https://github.com/ReidenXerx/mynah)**, by the original whiz author ReidenXerx, is that half — the same engine, the same tuned
 segmentation, the same macOS app, now with a name of its own:
 
 ```bash
@@ -652,4 +661,4 @@ Tests isolate the filesystem (via `monkeypatch` and `tmp_path`) so host-installe
 
 ## License
 
-MIT © ReidenXerx
+MIT. Original whiz © ReidenXerx; wiz changes © Valentin Muro. See [LICENSE](LICENSE).

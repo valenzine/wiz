@@ -2506,7 +2506,7 @@ def cmd_config_set(args: argparse.Namespace) -> int:
 
 # The canonical install source. pipx installs from this git URL, so `whiz
 # upgrade` re-runs the same install to pull the latest commit.
-_INSTALL_SOURCE = "git+https://github.com/ReidenXerx/whiz.git"
+_INSTALL_SOURCE = "git+https://github.com/valenzine/wiz.git"
 
 
 def _diarize_extra_installed() -> bool:

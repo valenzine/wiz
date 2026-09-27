@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/).
+
+## [0.15.0] - 2026-09-27
+
+First release of **wiz**, Valentin Muro's fork of
+[whiz](https://github.com/ReidenXerx/whiz) by ReidenXerx (MIT).
+
+### Added
+
+- `--diarization-provider {cpu,coreml}` and `--diarization-threads N` on
+  `transcribe`, `merge` and `speakers match`, with matching config keys
+  `diarization_provider` (default `cpu`) and `diarization_threads` (default `1`).
+  The defaults keep the previous behavior.
+- `--diarization-window-shift` and the `diarization_window_shift` config key
+  (0 < x <= 1, default `0.1`). Larger values make Pyannote segmentation faster
+  but coarser. Values other than `0.1` need sherpa-onnx >= 1.13.6.
+- Diarization and speaker-profile embedding runs now report how long they took,
+  and show the provider, thread count and window shift in use.
+
+### Fixed
+
+- Speaker diarization now works on MP3 and other audio that isn't 16 kHz mono
+  16-bit WAV. `transcribe`, `merge` and `speakers match` convert it to a
+  temporary WAV for sherpa-onnx, never overwriting the source or an existing
+  WAV. The temporary file is removed afterwards, including on errors and Ctrl-C.
+- Whisper output for converted audio is named after the source
+  (`recording.mp3.json`), not the temporary WAV.
+- An unknown `--outputs` format or a missing whisper-cli now fails before any
+  audio is extracted or converted, instead of leaving a stray WAV behind.
+- The diarization cache for converted audio is keyed on the original file, so
+  re-running `merge` or `transcribe --resume` reuses it.
+
+### Changed
+
+- Project identity: the license adds the fork's copyright line (the original is
+  kept), and the README, package metadata and `whiz upgrade` point to
+  `github.com/valenzine/wiz`. Upstream's website page (`docs/index.html`) is removed.
+- The diarization cache also records the window shift. Caches written by
+  earlier versions are recomputed once.
