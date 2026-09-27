@@ -46,7 +46,7 @@ def test_diarization_passes_settings_to_both_models(
             return SimpleNamespace(sort_by_start_time=lambda: [])
 
     fake = SimpleNamespace(
-        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a: object(),
+        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a, **_k: object(),
         OfflineSpeakerSegmentationModelConfig=segmentation,
         SpeakerEmbeddingExtractorConfig=embedding,
         FastClusteringConfig=lambda **_k: object(),
@@ -237,7 +237,7 @@ def test_explicit_provider_initialization_failure_names_provider(tmp_path, monke
         raise RuntimeError("CoreML session unavailable")
 
     fake = SimpleNamespace(
-        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a: object(),
+        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a, **_k: object(),
         OfflineSpeakerSegmentationModelConfig=lambda **_k: object(),
         SpeakerEmbeddingExtractorConfig=lambda *_a, **_k: object(),
         FastClusteringConfig=lambda **_k: object(),
@@ -298,7 +298,7 @@ def test_normalized_audio_reuses_cache_keyed_on_compressed_source(tmp_path, monk
             return SimpleNamespace(sort_by_start_time=lambda: segments)
 
     fake = SimpleNamespace(
-        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a: object(),
+        OfflineSpeakerSegmentationPyannoteModelConfig=lambda *_a, **_k: object(),
         OfflineSpeakerSegmentationModelConfig=lambda **_k: object(),
         SpeakerEmbeddingExtractorConfig=lambda *_a, **_k: object(),
         FastClusteringConfig=lambda **_k: object(),
@@ -361,8 +361,8 @@ def _window_shift_sherpa(tmp_path, monkeypatch, pyannote, segments=()):
     return model, process_calls
 
 
-def test_window_shift_defaults_to_sherpa_default_call(tmp_path, monkeypatch):
-    assert cfg.Config().diarization_window_shift == 0.1
+def test_window_shift_defaults_to_0_2_and_is_always_passed(tmp_path, monkeypatch):
+    assert cfg.Config().diarization_window_shift == 0.2
     args = cli.build_parser().parse_args(["transcribe", "episode.wav"])
     assert args.diarization_window_shift is None  # config default applies
     seen = []
@@ -370,8 +370,7 @@ def test_window_shift_defaults_to_sherpa_default_call(tmp_path, monkeypatch):
         tmp_path, monkeypatch, lambda *a, **k: seen.append((a, k)) or object(),
     )
     D.run_diarization(tmp_path / "episode.wav", cfg.Config(), use_cache=False)
-    # Default keeps the historical positional call (works on sherpa < 1.13.6).
-    assert seen == [((str(model),), {})]
+    assert seen == [((), {"model": str(model), "window_shift_ratio": 0.2})]
 
 
 def test_window_shift_reaches_pyannote_config(tmp_path, monkeypatch):
@@ -380,24 +379,22 @@ def test_window_shift_reaches_pyannote_config(tmp_path, monkeypatch):
         tmp_path, monkeypatch, lambda *a, **k: seen.append((a, k)) or object(),
     )
     D.run_diarization(
-        tmp_path / "episode.wav", cfg.Config(diarization_window_shift=0.2), use_cache=False,
+        tmp_path / "episode.wav", cfg.Config(diarization_window_shift=0.35), use_cache=False,
     )
-    assert seen == [((), {"model": str(model), "window_shift_ratio": 0.2})]
+    assert seen == [((), {"model": str(model), "window_shift_ratio": 0.35})]
 
 
-def test_window_shift_on_old_sherpa_names_required_version(tmp_path, monkeypatch):
+def test_too_old_sherpa_says_how_to_upgrade(tmp_path, monkeypatch):
     def old_pyannote(model):  # sherpa-onnx < 1.13.6: no window_shift_ratio kwarg
         return object()
 
     _window_shift_sherpa(tmp_path, monkeypatch, old_pyannote)
-    with pytest.raises(RuntimeError, match=r"1\.13\.6"):
-        D.run_diarization(
-            tmp_path / "episode.wav", cfg.Config(diarization_window_shift=0.2), use_cache=False,
-        )
+    with pytest.raises(D.DiarizationUnavailable, match=r"1\.13\.6.*pipx inject --force transcript-wiz 'sherpa-onnx>=1\.13\.6'"):
+        D.run_diarization(tmp_path / "episode.wav", cfg.Config(), use_cache=False)
 
 
 @pytest.mark.parametrize("command", ["transcribe", "merge", "match"])
-@pytest.mark.parametrize(("cli_value", "expected"), [(["--diarization-window-shift", "0.2"], 0.2), ([], 0.3)])
+@pytest.mark.parametrize(("cli_value", "expected"), [(["--diarization-window-shift", "0.35"], 0.35), ([], 0.3)])
 def test_cli_window_shift_overrides_config(tmp_path, monkeypatch, command, cli_value, expected):
     monkeypatch.setattr(cfg, "CONFIG_PATH", tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("diarization_window_shift = 0.3\n", encoding="utf-8")

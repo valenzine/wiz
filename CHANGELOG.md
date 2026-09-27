@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.17.0] - 2026-09-27
+
+### Changed
+
+- Speaker diarization is about twice as fast by default: the window shift is now
+  0.2 instead of 0.1. On a 50-minute, two-speaker episode, diarization took about
+  3:50 instead of 7:46, and the share of words given to the wrong speaker was
+  2.83% instead of 2.99% (0.25 was faster still, but less accurate at 3.17%).
+  To get the old behaviour, run `wiz config set diarization_window_shift=0.1`.
+- Diarization now needs sherpa-onnx 1.13.6 or newer. An older one is treated like
+  a missing one: speaker labels are skipped with a warning that says how to upgrade:
+  `pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6'`. The install hints
+  and `wiz upgrade` now pass `--force`, since without it pipx leaves an older
+  sherpa-onnx in place.
+- Diarization caches written with the old default are recomputed once.
+
 ## [0.16.0] - 2026-09-27
 
 ### Changed

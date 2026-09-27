@@ -91,6 +91,11 @@ def migrate_legacy_dirs() -> Iterator[tuple[Path, Path]]:
         yield old, new
 
 
+# Measured on a real 50-minute two-speaker episode: 0.2 attributes speech as
+# accurately as sherpa-onnx's own default (0.1) in about half the time.
+DEFAULT_DIARIZATION_WINDOW_SHIFT = 0.2
+
+
 @dataclass
 class Config:
     # Model alias or absolute path preferred by default (empty => auto-pick best).
@@ -132,8 +137,8 @@ class Config:
     diarization_provider: str = "cpu"
     diarization_threads: int = 1
     # Pyannote segmentation window shift, as a fraction of the window
-    # (0 < x <= 1). 0.1 is sherpa-onnx's own default; larger is faster.
-    diarization_window_shift: float = 0.1
+    # (0 < x <= 1); larger is faster but coarser.
+    diarization_window_shift: float = DEFAULT_DIARIZATION_WINDOW_SHIFT
     # Remembered answer to the one-time diarization auto-setup prompt.
     # None (unset) => ask on a TTY / proceed automatically when scripted;
     # true/false answers permanently for both. Written by the prompt and

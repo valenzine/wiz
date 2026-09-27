@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "transcript-wiz"
-version = "0.16.0"
+version = "0.17.0"
 description = "A transcription CLI for meetings, screen recordings, and interviews — powered by whisper.cpp, with diarization, speaker naming, screenshots, HTML transcripts, and auto-detecting AI analysis (summary, action items, implementation plans, session notes)."
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,7 +30,7 @@ dependencies = ["rich>=13"]
 test = ["pytest>=7"]
 # Keep in sync with DIARIZE_REQUIREMENT in wiz/diarize.py (the auto-setup
 # installs the same spec, so the auto and manual paths agree; a test checks).
-diarize = ["sherpa-onnx>=1.10"]
+diarize = ["sherpa-onnx>=1.13.6"]
 
 [project.urls]
 Homepage = "https://github.com/valenzine/wiz"

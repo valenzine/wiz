@@ -2468,7 +2468,7 @@ def test_diarize_install_hint_matches_the_extra_and_never_resolves_wiz():
     pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["optional-dependencies"]["diarize"] == [cli.D.DIARIZE_REQUIREMENT]
     assert pyproject["project"]["name"] == cli.D.PIPX_PACKAGE == "transcript-wiz"
-    assert cli.D.DIARIZE_INJECT == f"pipx inject transcript-wiz '{cli.D.DIARIZE_REQUIREMENT}'"
+    assert cli.D.DIARIZE_INJECT == f"pipx inject --force transcript-wiz '{cli.D.DIARIZE_REQUIREMENT}'"
     assert "wiz[" not in cli.D.DIARIZE_INJECT
 
 
@@ -2494,4 +2494,4 @@ def test_upgrade_reinjects_the_diarize_requirement_into_the_pipx_package(monkeyp
     monkeypatch.setattr(cli, "_run_live", lambda cmd: calls.append(cmd) or 0)
     assert cli.cmd_upgrade(argparse.Namespace()) == 0
     assert calls[0] == ["pipx", "install", "--force", cli._INSTALL_SOURCE]
-    assert calls[1] == ["pipx", "inject", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
+    assert calls[1] == ["pipx", "inject", "--force", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
