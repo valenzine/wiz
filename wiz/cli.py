@@ -1438,21 +1438,13 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
 
     ui.summary(written)
 
-    # L (wave-1 audit): rc symmetry with `wiz merge`. An EXPLICIT --speakers
-    # that degraded to generic labels and wrote nothing speaker-related
-    # used to exit 0 here while merge exits 1 for the same outcome — a
-    # wrapper could not tell the transcribe failed to deliver the requested
-    # speaker labels. rc stays 0 whenever anything was written or kept (the
-    # transcript itself succeeded); it goes nonzero only when the explicit
-    # --speakers request produced nothing at all. A whisper failure keeps
-    # whisper's own rc (checked first below via `rc == 0`).
+    # An explicit --speakers request is unfulfilled when no real diarization
+    # labels exist, even if generic fallback artifacts were written or prior
+    # labeled artifacts were kept. A whisper failure keeps its own rc.
     if (
         args.speakers is not None
-        and diarize_enabled
         and rc == 0
         and not diar_segments
-        and not written
-        and not kept_outputs
     ):
         return 1
 
@@ -2214,6 +2206,11 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
         written.extend(str(p) for p in fallback_written)
         kept_outputs.extend(fallback_kept)
     ui.summary(written)
+    # Generic fallback artifacts and preserved outputs do not fulfill an
+    # explicit diarization request. Video-only auto-diarization remains a
+    # successful degraded run because args.speakers is None in that case.
+    if args.speakers is not None and not diar_segments:
+        return 1
     if not written:
         if kept_outputs:
             # Everything this run would have written already existed and was
