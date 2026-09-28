@@ -11,6 +11,8 @@ All notable changes to this project are documented here. The format is based on
 - When I explicitly request speaker diarization and it cannot produce real speaker
   labels, `transcribe` and `merge` now exit with an error even if they wrote
   generic-label outputs. Video's automatic diarization still degrades with a hint.
+  A closing warning now explains the nonzero exit, and a `transcribe` whose
+  whisper JSON goes missing also exits nonzero instead of reporting success.
 
 ## [0.17.0] - 2026-09-27
 

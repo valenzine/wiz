@@ -1195,6 +1195,17 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
     return diar_segments
 
 
+def _report_unfulfilled_speakers_request() -> None:
+    """Explain the nonzero exit of a run whose explicit --speakers produced no
+    real speaker labels. It prints after the summary panel, which can list
+    generic-label or kept files, so the exit status is not left unexplained."""
+    ui.status(
+        "Speakers: --speakers was requested but no speaker labels were produced; exiting with status 1.",
+        kind="warn",
+        detail="Any speaker files left by this run carry generic 'Speaker' labels or predate it.",
+    )
+
+
 def cmd_transcribe(args: argparse.Namespace) -> int:
     config = cfg.load()
     _apply_diarization_execution_overrides(args, config)
@@ -1267,7 +1278,6 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
 
     # --- Merge diarization with whisper output ---
     written: list[str] = []
-    kept_outputs: list[Path] = []
     want_html = _outputs_include(args, config, "html")
     # The degraded (unlabeled) fallback honors only an EXPLICIT --outputs
     # html; config-supplied html keeps master's skip when diarization
@@ -1352,12 +1362,6 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
                     if not manifest_kept:
                         ui.wrote("Wrote frames manifest", manifest_path)
                         written.append(str(manifest_path))
-                    else:
-                        # H5: a named manifest from an earlier diarized run
-                        # was KEPT, not overwritten — count it so a kept-only
-                        # run reads as a no-op success (rc=0), mirroring
-                        # `_write_html_transcript`'s kept contract.
-                        kept_outputs.append(manifest_path)
             # Write HTML after frames exist so they can be inlined.
             if want_html and want_frames and frames_dir is not None:
                 ui.phase("writing HTML transcript")
@@ -1402,17 +1406,14 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
                     if not manifest_kept:
                         ui.wrote("Wrote frames manifest", manifest_path)
                         written.append(str(manifest_path))
-                    else:
-                        kept_outputs.append(manifest_path)
             if explicit_html:
                 ui.phase("writing HTML transcript")
-                fallback_written, fallback_kept = _write_html_transcript(
+                fallback_written, _fallback_kept = _write_html_transcript(
                     unlabeled, artifact_base, frames_dir, in_path.name,
                     note=_GENERIC_LABEL_NOTE,
                     transcript_txt=not want_frames,
                 )
                 written.extend(str(p) for p in fallback_written)
-                kept_outputs.extend(fallback_kept)
             elif want_html and not explicit_html:
                 # L (wave-1 audit): config-supplied html was skipped on this
                 # degraded run — say so, and NAME the format (a generic
@@ -1440,12 +1441,14 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
 
     # An explicit --speakers request is unfulfilled when no real diarization
     # labels exist, even if generic fallback artifacts were written or prior
-    # labeled artifacts were kept. Keep the failure status after a separately
-    # requested chained analysis has had a chance to use those artifacts.
+    # labeled artifacts were kept. Labels need both diarization segments and
+    # whisper segments to assign them to. Keep the failure status after a
+    # separately requested chained analysis has had a chance to use those
+    # artifacts.
     unfulfilled_speakers_request = (
         args.speakers is not None
         and rc == 0
-        and not diar_segments
+        and not (diar_segments and whisper_segs)
     )
 
     # Optional: chain into AI analysis after a successful transcription.
@@ -1495,7 +1498,10 @@ def _cmd_transcribe_prepared(args: argparse.Namespace, config: cfg.Config, prepa
             )
             return analyze_rc
 
-    return 1 if unfulfilled_speakers_request else rc
+    if unfulfilled_speakers_request:
+        _report_unfulfilled_speakers_request()
+        return 1
+    return rc
 
 
 # ---------- models ----------
@@ -2170,8 +2176,9 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
                 written.append(str(manifest_path))
             else:
                 # H5: a NAMED manifest from an earlier diarized run was KEPT
-                # (this run is degraded) — count it so a kept-only run reads
-                # as a no-op success (rc=0), like `_write_html_transcript`.
+                # (this run is degraded) — count it so an auto-diarized
+                # kept-only run reads as a no-op success (rc=0), like
+                # `_write_html_transcript`. Explicit --speakers exits 1 below.
                 kept_outputs.append(manifest_path)
     # Write HTML after frames exist so they can be inlined.
     if want_html and frames_dir is not None and merged:
@@ -2210,13 +2217,14 @@ def _cmd_merge_prepared(args: argparse.Namespace, cleanup: list[tuple[Path, Path
     # explicit diarization request. Video-only auto-diarization remains a
     # successful degraded run because args.speakers is None in that case.
     if args.speakers is not None and not diar_segments:
+        _report_unfulfilled_speakers_request()
         return 1
     if not written:
         if kept_outputs:
-            # Everything this run would have written already existed and was
-            # correctly KEPT (named outputs from an earlier diarized run) — a
-            # no-op success, not a failure. rc=1 here would false-alarm
-            # `wiz merge ... || alert` wrappers on identical re-runs.
+            # Auto-diarized (video, no --speakers) run: everything it would
+            # have written already existed and was correctly KEPT (named
+            # outputs from an earlier diarized run) — a no-op success. An
+            # explicit --speakers run never reaches here (it returned 1 above).
             return 0
         # E.g. diarization produced no segments and no html/screenshots
         # fallback was requested: a silent rc=0 would read as success.

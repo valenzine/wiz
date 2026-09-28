@@ -770,8 +770,9 @@ def _stub_setup_ready(monkeypatch):
 
 
 def test_merge_html_fallback_when_diarization_unavailable_returns_error(tmp_path, monkeypatch, capsys):
-    """wiz merge --speakers --outputs html with sherpa-onnx missing degrades
-    to a generic-label HTML transcript instead of exiting."""
+    """wiz merge --speakers --outputs html with sherpa-onnx missing still
+    writes a generic-label HTML transcript, then exits 1 because the
+    explicit speaker request was not fulfilled."""
     audio = tmp_path / "meeting.m4a"
     audio.write_bytes(b"fake audio")
     (tmp_path / "meeting.m4a.json").write_text(_WHISPER_JSON, encoding="utf-8")
@@ -1127,6 +1128,67 @@ def test_merge_fallback_never_clobbers_existing_named_outputs_returns_error(tmp_
     err = capsys.readouterr().err
     assert "kept" in err and "meeting.m4a.speakers.txt" in err
     assert "kept" in err and "meeting.m4a.speakers.html" in err
+    assert "no speaker labels were produced" in " ".join(err.split())
+
+
+def _merge_auto_diarized(monkeypatch, tmp_path):
+    """An audio merge that behaves like video auto-enabled diarization
+    (speakers_auto=True, no --speakers) with sherpa-onnx missing."""
+    audio = tmp_path / "meeting.m4a"
+    audio.write_bytes(b"fake audio")
+    (tmp_path / "meeting.m4a.json").write_text(_WHISPER_JSON, encoding="utf-8")
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
+    monkeypatch.setattr(cli, "_video_auto_flags", lambda args, in_path: (False, True))
+    _stub_setup_unavailable(monkeypatch)
+    monkeypatch.setattr(cli.D, "run_diarization", _raise_sherpa_missing)
+    return audio
+
+
+def test_merge_auto_diarization_degrade_stays_success(tmp_path, monkeypatch, capsys):
+    """Only an EXPLICIT --speakers fails when no labels are produced; an
+    auto-enabled diarization that degrades to generic labels exits 0."""
+    audio = _merge_auto_diarized(monkeypatch, tmp_path)
+
+    rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=None))
+
+    assert rc == 0
+    assert ">Speaker<" in (tmp_path / "meeting.m4a.speakers.html").read_text(encoding="utf-8")
+    assert "no speaker labels were produced" not in " ".join(capsys.readouterr().err.split())
+
+
+def test_merge_auto_diarization_kept_only_stays_success(tmp_path, monkeypatch):
+    """Auto-enabled diarization that only keeps named outputs from an
+    earlier diarized run is a no-op success, not a failure."""
+    audio = _merge_auto_diarized(monkeypatch, tmp_path)
+    named_txt = tmp_path / "meeting.m4a.speakers.txt"
+    named_html = tmp_path / "meeting.m4a.speakers.html"
+    named_txt.write_text("Vadim (00:00:00): real named content\n", encoding="utf-8")
+    named_html.write_text("<html>named run</html>", encoding="utf-8")
+
+    rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=None))
+
+    assert rc == 0
+    assert named_html.read_text(encoding="utf-8") == "<html>named run</html>"
+
+
+def test_transcribe_missing_whisper_json_with_explicit_speakers_returns_error(tmp_path, monkeypatch, capsys):
+    """Diarization segments alone are not speaker labels: when the whisper
+    JSON is missing, an explicit --speakers run wrote nothing labeled and
+    must exit nonzero, with the reason printed last."""
+    audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
+    (tmp_path / "meeting.m4a.json").unlink()
+    monkeypatch.setattr(
+        cli.D, "run_diarization",
+        lambda wav, config, num_speakers=0, threshold=0.9, **_kwargs: [
+            DiarSegment(start=0.0, end=3.0, speaker=0),
+        ],
+    )
+
+    rc = cli.cmd_transcribe(_transcribe_args(audio, outputs="srt", speakers=1))
+
+    assert rc == 1
+    assert not (tmp_path / "meeting.speakers.srt").exists()
+    assert "no speaker labels were produced" in " ".join(capsys.readouterr().err.split())
 
 
 def test_transcribe_fallback_rerun_overwrites_existing_degraded_outputs(tmp_path, monkeypatch, capsys):
