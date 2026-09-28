@@ -55,10 +55,10 @@ export const GITNEXUS_SCRIPT_GATES = [
     description:
       "Humans/CI refresh the graph. Agents run bearing:agent-refresh autonomously when stale (hook pre-approved).",
     scripts: {
-      "bearing:refresh": `${WRAP} npx gitnexus@latest analyze --embeddings 0 --skills`,
-      "bearing:full": `${WRAP} npx gitnexus@latest analyze --force --embeddings 0 --skills`,
-      "bearing:pdg": `${WRAP} npx gitnexus@latest analyze --embeddings 0 --skills --pdg`,
-      "bearing:full-pdg": `${WRAP} npx gitnexus@latest analyze --force --embeddings 0 --skills --pdg`,
+      "bearing:refresh": `${WRAP} npx gitnexus@latest analyze --embeddings 0`,
+      "bearing:full": `${WRAP} npx gitnexus@latest analyze --force --embeddings 0`,
+      "bearing:pdg": `${WRAP} npx gitnexus@latest analyze --embeddings 0 --pdg`,
+      "bearing:full-pdg": `${WRAP} npx gitnexus@latest analyze --force --embeddings 0 --pdg`,
       "bearing:status": `${WRAP} npx gitnexus@latest status`,
       "bearing:agent-refresh": "node scripts/bearing-agent.mjs refresh",
       "bearing:agent-review": "node scripts/bearing-agent.mjs review",

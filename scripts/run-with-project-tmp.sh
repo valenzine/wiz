@@ -9,8 +9,9 @@ export TEMP="$TMP"
 export TMP="$TMP"
 mkdir -p "$TMPDIR"
 if [[ "${1:-}" == "gitnexus" ]]; then
+  # Resolve the binary and the analyze --name alias the same way the JS callers do.
   shift
-  read -r -a GITNEXUS_CMD <<< "$(node "$ROOT/.bearing/lib/gitnexus-cmd.mjs")"
-  exec "${GITNEXUS_CMD[@]}" "$@"
+  cd "$ROOT"
+  exec node "$ROOT/.bearing/lib/gitnexus-cmd.mjs" --exec "$@"
 fi
 exec "$@"

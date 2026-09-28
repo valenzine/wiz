@@ -12,24 +12,9 @@ fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "Run from a git repo root (extract archive here first)"
 
-REPO_NAME="${GITNEXUS_REPO_NAME:-$(node --input-type=module -e "import { gitnexusRepoName } from './.bearing/lib/gitnexus-cmd.mjs'; console.log(gitnexusRepoName(process.cwd()))")}"
+REPO_NAME="${GITNEXUS_REPO_NAME:-$(node .bearing/lib/gitnexus-cmd.mjs --repo-name 2>/dev/null || basename "$ROOT")}"
 
 info "Target repo: $REPO_NAME"
-
-if grep -rq 'whiz' .cursor/rules .cursor/hooks .bearing/skills/bearing-workspace .bearing/skills/bearing-enforcement 2>/dev/null; then
-  warn "Bundle still references whiz — set GITNEXUS_REPO_NAME and re-run substitution:"
-  warn "  GITNEXUS_REPO_NAME=$REPO_NAME bash scripts/bearing-teaching/install-from-bundle.sh"
-  if [[ "${GITNEXUS_SKIP_RENAME:-}" != "1" ]]; then
-    info "Replacing whiz → $REPO_NAME in rules/hooks/skills"
-    find .cursor/rules .cursor/hooks .bearing/skills/bearing-workspace .bearing/skills/bearing-enforcement \
-      -type f \( -name '*.mdc' -o -name '*.sh' -o -name '*.mjs' -o -name 'SKILL.md' \) \
-      -exec sed -i '' "s/whiz/$REPO_NAME/g" {} + 2>/dev/null \
-      || find .cursor/rules .cursor/hooks .bearing/skills/bearing-workspace .bearing/skills/bearing-enforcement \
-      -type f \( -name '*.mdc' -o -name '*.sh' -o -name '*.mjs' -o -name 'SKILL.md' \) \
-      -exec sed -i "s/whiz/$REPO_NAME/g" {} +
-    ok "Repo name substituted"
-  fi
-fi
 
 if [[ -f scripts/bearing-teaching/merge-package-scripts.mjs ]]; then
   info "Injecting GitNexus npm scripts into package.json"

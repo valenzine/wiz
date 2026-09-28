@@ -4,7 +4,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { gitnexusRepoName } from "./gitnexus-cmd.mjs";
 import {
   playbookCypherForHint,
   isDataFlowReadContext,
@@ -358,10 +357,7 @@ function globToRegExp(glob) {
   return new RegExp(`(?:^|/)${re}`);
 }
 
-/** @param {string} root */
-export function repoName(root) {
-  return gitnexusRepoName(root);
-}
+export { gitnexusRepoName as repoName } from "./gitnexus-cmd.mjs";
 
 /**
  * @param {string} filePath

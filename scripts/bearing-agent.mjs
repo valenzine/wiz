@@ -491,10 +491,6 @@ function git(args) {
   return r.status === 0 ? r.stdout.trim() : "";
 }
 
-function repoName() {
-  return gitnexusRepoName(ROOT);
-}
-
 function currentBranch() {
   return (
     git(["branch", "--show-current"]) ||
@@ -523,7 +519,7 @@ if (cmd === "branch-status") {
   const baseArg = process.argv[3] || process.env.GITHUB_BASE_REF || "main";
   const branch = currentBranch();
   const base = resolveBaseRef(baseArg);
-  const repo = repoName();
+  const repo = gitnexusRepoName(ROOT);
   const lines = [`GitNexus branch status — ${branch}`, ""];
   lines.push(`Repo: ${repo}`);
   lines.push(`Current branch: ${branch}`);
@@ -556,7 +552,7 @@ if (cmd === "branch-status") {
 if (cmd === "review" || cmd === "pr-impact") {
   const baseArg = process.argv[3] || process.env.GITHUB_BASE_REF || "main";
   const branch = currentBranch();
-  const repo = repoName();
+  const repo = gitnexusRepoName(ROOT);
   const base = resolveBaseRef(baseArg);
   const range = base ? `${base}...HEAD` : `${baseArg}...HEAD`;
   const names = base

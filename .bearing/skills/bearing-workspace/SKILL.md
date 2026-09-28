@@ -1,12 +1,12 @@
 ---
 name: bearing-workspace
 description: >-
-  Master index for whiz GitNexus usage in Cursor. Use at the start
+  Master index for wiz GitNexus usage in Cursor. Use at the start
   of any code task — exploration, edits, refactors, PR review, or API changes.
   Teaches workflow chain, anti-patterns, and which skill to load.
 ---
 
-# GitNexus Workspace (whiz)
+# GitNexus Workspace (wiz)
 
 This repo replaces grep-first navigation with a **knowledge graph + embeddings + Cypher/PDG** for **all code reasoning** (not only the first lookup). **`query`** uses BM25 + semantic vectors for orient/explore. **`trace`** answers known A→B call paths. **`pdg_query`** answers control/data-flow questions when the PDG layer exists. **`cypher`** answers precise graph questions (field ACCESSES, overrides, process steps). **`rename`** coordinates multi-file symbol renames (dry_run first). **Hooks actively block** lazy patterns when the index is fresh; **autonomous refresh** when stale or embeddings missing; **classical fallback** when GN fails — see `00-bearing-enforcement` rule.
 

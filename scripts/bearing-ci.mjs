@@ -71,10 +71,6 @@ function gn(args, timeoutMs = 120000) {
   };
 }
 
-function repoName() {
-  return gitnexusRepoName(ROOT);
-}
-
 /** Changed production code, and whether tests moved with it. */
 function collectDiff() {
   let base = baseRef;
@@ -330,7 +326,7 @@ async function postSticky(body) {
 }
 
 async function main() {
-  const repo = repoName();
+  const repo = gitnexusRepoName(ROOT);
   const diff = collectDiff();
 
   if (!diff.code.length) {
