@@ -357,11 +357,7 @@ function globToRegExp(glob) {
   return new RegExp(`(?:^|/)${re}`);
 }
 
-/** @param {string} root */
-export function repoName(root) {
-  if (process.env.GITNEXUS_REPO) return process.env.GITNEXUS_REPO;
-  return path.basename(root);
-}
+export { gitnexusRepoName as repoName } from "./gitnexus-cmd.mjs";
 
 /**
  * @param {string} filePath
@@ -672,4 +668,3 @@ export function parseChangedSymbols(text) {
   }
   return { symbols: out, parsed: true };
 }
-

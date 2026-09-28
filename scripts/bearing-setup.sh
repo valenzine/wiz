@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# whiz — all-in-one GitNexus teaching + git hooks team installer.
+# wiz — all-in-one GitNexus teaching + git hooks team installer.
 #
 # Installs:
 #   • Teaching bundle (skills sync, manifest)
@@ -104,7 +104,7 @@ semver_ge() {
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  whiz — GitNexus team setup                    ║"
+echo "║  wiz — GitNexus team setup                     ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -216,7 +216,7 @@ else
     info "Full index rebuild (may take several minutes)"
     npm run bearing:full
   else
-    info "Incremental index (embeddings + area skills)"
+    info "Incremental index (embeddings)"
     npm run bearing:refresh
   fi
   ok "Knowledge graph indexed"
@@ -227,8 +227,8 @@ else
   info "Graph smoke test (Cypher / ACCESSES)"
   npm run bearing:graph-smoke 2>/dev/null && ok "Graph smoke passed" || warn "Graph smoke failed — check index"
 
-  # Re-sync generated area skills produced by analyze --skills
-  info "Re-syncing area skills after index"
+  # Re-sync the existing Bearing teaching skills after indexing.
+  info "Re-syncing Bearing teaching skills after index"
   bash scripts/sync-cursor-bearing-teaching.sh
 fi
 

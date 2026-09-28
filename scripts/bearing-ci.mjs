@@ -33,7 +33,7 @@ const ROOT = process.cwd();
 // Same hoisting problem as the benchmark: a static `.bearing/lib` import runs before any guard, so
 // a CI job on a damaged install failed with a stack trace instead of a reason.
 assertKitInstalled(ROOT);
-const { gitnexusSpawn } = await import('../.bearing/lib/gitnexus-cmd.mjs');
+const { gitnexusSpawn, gitnexusRepoName } = await import('../.bearing/lib/gitnexus-cmd.mjs');
 const baseRef = process.argv[2] || process.env.GITHUB_BASE_REF || 'main';
 const mode = (process.env.GITNEXUS_CI_MODE || 'report').toLowerCase();
 const highThreshold = Number(process.env.GITNEXUS_CI_HIGH || 8);
@@ -69,10 +69,6 @@ function gn(args, timeoutMs = 120000) {
     missing: r.error?.code === 'ENOENT',
     cmd: [command, ...a].join(' '),
   };
-}
-
-function repoName() {
-  return path.basename(ROOT);
 }
 
 /** Changed production code, and whether tests moved with it. */
@@ -330,7 +326,7 @@ async function postSticky(body) {
 }
 
 async function main() {
-  const repo = repoName();
+  const repo = gitnexusRepoName(ROOT);
   const diff = collectDiff();
 
   if (!diff.code.length) {

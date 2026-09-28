@@ -1,12 +1,12 @@
 ---
 name: bearing-workspace
 description: >-
-  Master index for whiz GitNexus usage in Cursor. Use at the start
+  Master index for wiz GitNexus usage in Cursor. Use at the start
   of any code task — exploration, edits, refactors, PR review, or API changes.
   Teaches workflow chain, anti-patterns, and which skill to load.
 ---
 
-# GitNexus Workspace (whiz)
+# GitNexus Workspace (wiz)
 
 This repo replaces grep-first navigation with a **knowledge graph + embeddings + Cypher/PDG** for **all code reasoning** (not only the first lookup). **`query`** uses BM25 + semantic vectors for orient/explore. **`trace`** answers known A→B call paths. **`pdg_query`** answers control/data-flow questions when the PDG layer exists. **`cypher`** answers precise graph questions (field ACCESSES, overrides, process steps). **`rename`** coordinates multi-file symbol renames (dry_run first). **Hooks actively block** lazy patterns when the index is fresh; **autonomous refresh** when stale or embeddings missing; **classical fallback** when GN fails — see `00-bearing-enforcement` rule.
 
@@ -15,8 +15,8 @@ This repo replaces grep-first navigation with a **knowledge graph + embeddings +
 Do not skip steps:
 
 ```
-READ gitnexus://repo/whiz/context   # or npm run bearing:agent-brief (autonomous)
-READ gitnexus://repo/whiz/schema    # before ad-hoc Cypher
+READ gitnexus://repo/wiz/context   # or npm run bearing:agent-brief (autonomous)
+READ gitnexus://repo/wiz/schema    # before ad-hoc Cypher
 → query({search_query, task_context, goal, repo, limit: 5, max_symbols: 12})   # graph + embeddings — orient
 → context({name, include_content: false}) or context({uid, include_content: false})
 → trace({from, to}) or pdg_query({mode})   # known paths, control/data flow when relevant
@@ -65,7 +65,6 @@ Run `npm run bearing:detect-api` to refresh the profile after major server chang
 | Security / taint / injection review | `bearing-security-review` |
 | Research HTTP API change | See **HTTP API routing** above |
 | Tool reference / Cypher / CLI | `bearing-guide` / `bearing-cli` |
-| Area entry points | `.claude/skills/gitnexus-area-<area>/` (mirrored to `.agents/skills/`) |
 | Hook blocked Grep/Read | `bearing-enforcement` (staleness + suspicion fallback) |
 | Full agent contract | `.cursor/rules/bearing.mdc` + `00-bearing-enforcement.mdc` |
 
@@ -82,7 +81,7 @@ query({
   search_query: "how retry/backoff is applied to outbound requests",  // concept, not a keyword
   task_context: "adding a circuit breaker",
   goal: "find existing retry logic to reuse",
-  repo: "whiz",
+  repo: "wiz",
   limit: 5,
   max_symbols: 12
 })

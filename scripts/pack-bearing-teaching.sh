@@ -130,18 +130,18 @@ cat > "$BUNDLE_ROOT/gitignore.snippet" <<'SNIP'
 .cursor/gitnexus-api-profile.json
 SNIP
 
+SOURCE_REPO="$(node .bearing/lib/gitnexus-cmd.mjs --repo-name)"
+
 node <<NODE > "$BUNDLE_ROOT/MANIFEST.json"
 const fs = require('fs');
 const manifest = {
   bundle: 'gitnexus-cursor-teaching',
   version: ${VERSION},
   packedAt: new Date().toISOString(),
-  sourceRepo: 'whiz',
+  sourceRepo: '${SOURCE_REPO}',
   files: $(node -e "console.log(JSON.stringify(process.argv.slice(1)))" "${BUNDLE_PATHS[@]}" "package.json.scripts.snippet.json" "gitignore.snippet" "MANIFEST.json"),
   notes: [
-    'Project-specific: replace whiz with target repo name in rules/hooks/skills',
     'Run scripts/bearing-teaching/install-from-bundle.sh after extracting',
-    'Area skills (.claude/skills/generated) are NOT bundled — created by bearing:refresh on target repo',
   ],
 };
 console.log(JSON.stringify(manifest, null, 2));

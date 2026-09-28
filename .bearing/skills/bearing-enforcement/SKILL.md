@@ -62,14 +62,14 @@ START
 When blocked, hooks return ready-to-run calls like:
 
 ```javascript
-gitnexus_query({ search_query: "auth flow", task_context: "...", goal: "...", repo: "whiz", limit: 5, max_symbols: 12 })
-gitnexus_context({ name: "<symbol>", repo: "whiz" })
-gitnexus_trace({ from: "<source>", to: "<target>", repo: "whiz", maxDepth: 10 })
-gitnexus_pdg_query({ mode: "flows", target: "<function-or-file>", variable: "<var>", repo: "whiz" })
-gitnexus_explain({ target: "<file-or-symbol>", repo: "whiz" })
-READ gitnexus://repo/whiz/schema
-gitnexus_cypher({ statement: "MATCH (f)-[r:CodeRelation {type: 'ACCESSES'}]->(p:Property {name: $name}) RETURN f.name, f.filePath, r.reason", params: { name: "<field>" }, repo: "whiz" })
-gitnexus_impact({ target: "<symbol>", direction: "upstream", repo: "whiz", summaryOnly: false, limit: 100 })
+gitnexus_query({ search_query: "auth flow", task_context: "...", goal: "...", repo: "wiz", limit: 5, max_symbols: 12 })
+gitnexus_context({ name: "<symbol>", repo: "wiz" })
+gitnexus_trace({ from: "<source>", to: "<target>", repo: "wiz", maxDepth: 10 })
+gitnexus_pdg_query({ mode: "flows", target: "<function-or-file>", variable: "<var>", repo: "wiz" })
+gitnexus_explain({ target: "<file-or-symbol>", repo: "wiz" })
+READ gitnexus://repo/wiz/schema
+gitnexus_cypher({ statement: "MATCH (f)-[r:CodeRelation {type: 'ACCESSES'}]->(p:Property {name: $name}) RETURN f.name, f.filePath, r.reason", params: { name: "<field>" }, repo: "wiz" })
+gitnexus_impact({ target: "<symbol>", direction: "upstream", repo: "wiz", summaryOnly: false, limit: 100 })
 ```
 
 | Blocked | Replacement |

@@ -32,8 +32,6 @@ const EMBED_CAP = "0"; // no cap — the 50k default silently truncates large re
  * @returns {RefreshPlan}
  */
 export function planRefresh(stale, opts = {}) {
-  const skills = "--skills";
-
   // STEALTH: tell the indexer not to write into AGENTS.md / CLAUDE.md at all.
   //
   // Without this, `analyze` appends its stats block to those tracked files and we strip it afterwards
@@ -46,7 +44,7 @@ export function planRefresh(stale, opts = {}) {
   if (opts.force) {
     return {
       tier: "full",
-      args: ["analyze", "--force", "--embeddings", EMBED_CAP, skills, ...quiet],
+      args: ["analyze", "--force", "--embeddings", EMBED_CAP, ...quiet],
       why: "full rebuild requested",
     };
   }
@@ -56,7 +54,7 @@ export function planRefresh(stale, opts = {}) {
   if (stale?.nodeCount > 0 && stale?.embeddingsReady === false) {
     return {
       tier: "embeddings",
-      args: ["analyze", "--force", "--embeddings", EMBED_CAP, skills, ...quiet],
+      args: ["analyze", "--force", "--embeddings", EMBED_CAP, ...quiet],
       why: `graph has ${stale.nodeCount} symbols and no embeddings — semantic search is unavailable, and an incremental analyze cannot add them`,
     };
   }
@@ -74,7 +72,7 @@ export function planRefresh(stale, opts = {}) {
   if (stale?.reason === "behind_unmeasured" || stale?.behindFiles < 0) {
     return {
       tier: "full",
-      args: ["analyze", "--force", "--embeddings", EMBED_CAP, skills, ...quiet],
+      args: ["analyze", "--force", "--embeddings", EMBED_CAP, ...quiet],
       why: "git could not measure the gap — rebuilding rather than assuming it is small",
     };
   }
@@ -84,7 +82,7 @@ export function planRefresh(stale, opts = {}) {
   if (stale?.reason === "missing" || stale?.reason === "invalid_meta" || !(stale?.nodeCount > 0)) {
     return {
       tier: "full",
-      args: ["analyze", "--embeddings", EMBED_CAP, skills, ...quiet],
+      args: ["analyze", "--embeddings", EMBED_CAP, ...quiet],
       why: "no usable index — building one",
     };
   }
@@ -94,7 +92,7 @@ export function planRefresh(stale, opts = {}) {
   if (stale?.reason === "diverged") {
     return {
       tier: "full",
-      args: ["analyze", "--force", "--embeddings", EMBED_CAP, skills, ...quiet],
+      args: ["analyze", "--force", "--embeddings", EMBED_CAP, ...quiet],
       why: "history diverged from the indexed commit — incremental cannot reconcile it",
     };
   }
@@ -111,7 +109,7 @@ export function planRefresh(stale, opts = {}) {
     if (opts.wantPdg) {
       return {
         tier: "pdg",
-        args: ["analyze", "--force", "--embeddings", EMBED_CAP, skills, "--pdg", ...quiet],
+        args: ["analyze", "--force", "--embeddings", EMBED_CAP, "--pdg", ...quiet],
         // Same short-circuit as embeddings: on a current graph, --pdg alone is ignored.
         why: "graph is current but the PDG substrate was asked for",
       };
@@ -123,8 +121,8 @@ export function planRefresh(stale, opts = {}) {
   return {
     tier: opts.wantPdg ? "pdg" : "incremental",
     args: opts.wantPdg
-      ? ["analyze", "--embeddings", EMBED_CAP, skills, "--pdg", ...quiet]
-      : ["analyze", "--embeddings", EMBED_CAP, skills, ...quiet],
+      ? ["analyze", "--embeddings", EMBED_CAP, "--pdg", ...quiet]
+      : ["analyze", "--embeddings", EMBED_CAP, ...quiet],
     why: `${n || "some"} source file(s) behind — incremental analyze`,
   };
 }

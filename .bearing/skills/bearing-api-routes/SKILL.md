@@ -27,7 +27,7 @@ Run `npm run bearing:detect-api` to refresh it after major server changes. Route
 ## Framework routers (Express / Fastify / Hono / Next route handlers)
 
 ```
-1. gitnexus_api_impact({ route: "/api/<path>", repo: "whiz" })   # consumers + shape + risk
+1. gitnexus_api_impact({ route: "/api/<path>", repo: "wiz" })   # consumers + shape + risk
 2. gitnexus_route_map({ route: "/api/<path>" })                                # handler + middleware chain
 3. gitnexus_shape_check({ route: "/api/<path>" })                              # response keys vs consumer access
 4. gitnexus_impact upstream on the handler symbol BEFORE editing

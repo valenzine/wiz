@@ -14,7 +14,7 @@ scoped `Grep` (allowed here, not a gate violation) and say which check you ran.
 <!-- END GENERATED: graph-uncertainty -->
 
 
-Match your task to a playbook. Always start with READ `gitnexus://repo/whiz/context`.
+Match your task to a playbook. Always start with READ `gitnexus://repo/wiz/context`.
 
 Cross-module flows / architecture questions → also read **`bearing-imaging`** skill.
 
@@ -22,7 +22,7 @@ Cross-module flows / architecture questions → also read **`bearing-imaging`** 
 
 ```
 - [ ] READ context resource — index fresh?
-- [ ] gitnexus_impact({target, direction: "upstream", repo: "whiz"})
+- [ ] gitnexus_impact({target, direction: "upstream", repo: "wiz"})
 - [ ] Report d=1 (WILL BREAK), affected processes, risk level to user
 - [ ] If HIGH/CRITICAL → warn before editing; suggest narrower change or tests
 - [ ] Optional: widen with relationTypes: ["CALLS","IMPORTS","ACCESSES"] for field/member edits
@@ -33,7 +33,7 @@ Cross-module flows / architecture questions → also read **`bearing-imaging`** 
 ## 2. Pre-commit
 
 ```
-- [ ] gitnexus_detect_changes({ scope: "staged", repo: "whiz" })
+- [ ] gitnexus_detect_changes({ scope: "staged", repo: "wiz" })
 - [ ] Review changed_symbols + affected_processes
 - [ ] Unexpected cross-module hits? → split commit or narrow scope
 - [ ] Risk CRITICAL/HIGH → run broader test suite before commit
@@ -43,7 +43,7 @@ Cross-module flows / architecture questions → also read **`bearing-imaging`** 
 ## 3. PR / branch review
 
 ```
-- [ ] gitnexus_detect_changes({ scope: "compare", base_ref: "main", repo: "whiz" })
+- [ ] gitnexus_detect_changes({ scope: "compare", base_ref: "main", repo: "wiz" })
 - [ ] List affected processes — do they match PR intent?
 - [ ] For each changed entry-point symbol: gitnexus_impact upstream
 - [ ] Flag cross-community process breaks
@@ -55,7 +55,7 @@ Cross-module flows / architecture questions → also read **`bearing-imaging`** 
 ```
 - [ ] gitnexus_query({search_query: "<error or symptom>", task_context: "debugging", goal: "find throw site"})
 - [ ] gitnexus_context on top suspect from returned processes
-- [ ] READ gitnexus://repo/whiz/processes — pick matching flow
+- [ ] READ gitnexus://repo/wiz/processes — pick matching flow
 - [ ] Optional cypher for call chains (see bearing-debugging skill)
 - [ ] Read source at flagged lines — confirm root cause
 - [ ] If regression: detect_changes on recent commits

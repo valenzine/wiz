@@ -10,9 +10,9 @@ disable-model-invocation: false
 
 ## Rules (short)
 
-1. **Orient:** `query({ search_query, task_context, goal, repo: "whiz", limit: 3, max_symbols: 8 })`
-2. **Symbol:** `context({ name, repo: "whiz", include_content: false })`
-3. **Before edit:** `impact({ target, direction: "upstream", repo: "whiz", summaryOnly: true })`
+1. **Orient:** `query({ search_query, task_context, goal, repo: "wiz", limit: 3, max_symbols: 8 })`
+2. **Symbol:** `context({ name, repo: "wiz", include_content: false })`
+3. **Before edit:** `impact({ target, direction: "upstream", repo: "wiz", summaryOnly: true })`
 4. **Path:** `trace({from, to})` when both endpoints are known
 5. **Control/data:** `pdg_query({mode: "controls"|"flows"})` when relevant
 6. **Structural:** READ schema → `cypher` (field ACCESSES, overrides, process steps)
