@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.17.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.17.1-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -217,7 +217,7 @@ wiz transcribe --dry-run recording.mov             # see what it would run, with
 
 Run `wiz transcribe --help` for the full flag reference.
 
-Exit codes: when an explicit `--speakers` degrades (sherpa-onnx or its models unavailable) and the run writes no speaker-labeled artifacts at all, `transcribe` exits nonzero — the same contract as `merge`, so `|| alert` wrappers can tell. A degraded run that does write generic-label outputs (or keeps existing named ones) still exits 0.
+Exit codes: if I explicitly pass `--speakers` and diarization produces no real speaker labels, `transcribe` and `merge` exit nonzero, even if they wrote generic-label outputs. If video auto-enables diarization without `--speakers`, the run can still succeed with a hint when speaker labels are unavailable.
 
 ### `wiz merge <file>`
 
@@ -400,7 +400,7 @@ wiz transcribe --speakers 2 --diarization-threads 8 episode.mp3
 wiz transcribe recording.mov --speakers-names Alice,Bob,Carol,Dave
 ```
 
-When diarization is about to run but sherpa-onnx or its models aren't set up yet, wiz performs the one-time setup on the spot (see above) — that is the normal path on a fresh machine. The degraded behavior below applies only when the setup **fails** (offline, disk full, ...) or you opted out with `--no-auto-diarization-setup`: an auto-enabled video run then skips speaker labeling with a one-line hint (and still transcribes + captures screenshots) instead of crashing. An explicitly requested `--speakers` degrades with a louder warning. An `--outputs html` **passed on that invocation** is never dropped: when speaker labels are unavailable the HTML transcript is still written, with every cue carrying a generic `Speaker` label and a warning explaining why. (`html` supplied only via config.toml describes the diarized happy path and is not treated as explicit — a degraded run keeps skipping it.) `--speakers-names` / `--name-speakers` are discarded in that case, and the warning says so — the names are never silently dropped. The degraded artifacts never overwrite speaker files an earlier diarized run left next to the media: each existing `.speakers.txt` / `.speakers.html` that carries real speaker labels is kept with a warning instead of being collapsed to generic labels — an earlier run's own degraded (generic-label) files are refreshed in place, so re-running with a different `--model`, `--language`, or audio updates them. A `wiz merge` whose only outcome is keeping existing outputs is a no-op success (exit 0), not a failure.
+When diarization is about to run but sherpa-onnx or its models aren't set up yet, wiz performs the one-time setup on the spot (see above) — that is the normal path on a fresh machine. The degraded behavior below applies only when the setup **fails** (offline, disk full, ...) or you opted out with `--no-auto-diarization-setup`: an auto-enabled video run then skips speaker labeling with a one-line hint (and still transcribes + captures screenshots) instead of crashing. An explicitly requested `--speakers` degrades with a louder warning. An `--outputs html` **passed on that invocation** is never dropped: when speaker labels are unavailable the HTML transcript is still written, with every cue carrying a generic `Speaker` label and a warning explaining why. (`html` supplied only via config.toml describes the diarized happy path and is not treated as explicit — a degraded run keeps skipping it.) `--speakers-names` / `--name-speakers` are discarded in that case, and the warning says so — the names are never silently dropped. The degraded artifacts never overwrite speaker files an earlier diarized run left next to the media: each existing `.speakers.txt` / `.speakers.html` that carries real speaker labels is kept with a warning instead of being collapsed to generic labels — an earlier run's own degraded (generic-label) files are refreshed in place, so re-running with a different `--model`, `--language`, or audio updates them. When video auto-enables diarization, a `wiz merge` whose only outcome is keeping existing outputs is a no-op success (exit 0). An explicit `--speakers` that produces no real speaker labels exits nonzero, even when it wrote generic-label files or kept named ones.
 
 This produces the normal whisper-cli outputs (SRT, JSON) plus two labeled files alongside the input:
 
