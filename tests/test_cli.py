@@ -12,6 +12,7 @@ import builtins
 import json
 import re
 import sys
+import time
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,81 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from wiz import cli
 from wiz.diarize import DiarSegment
+
+
+def test_stage_timings_render_elapsed_and_skipped_stages(monkeypatch):
+    """The always-on timing table retains subsecond precision and makes
+    skipped work explicit, so it is useful for a resume benchmark."""
+    clock = iter([10.0, 10.25, 10.25, 10.75])
+    monkeypatch.setattr(cli.time, "perf_counter", lambda: next(clock))
+    calls: list[tuple[object, object, object]] = []
+    monkeypatch.setattr(cli.ui, "table", lambda title, columns, rows: calls.append((title, columns, rows)))
+
+    timings = cli._StageTimings()
+    with timings.measure("Audio preparation"):
+        pass
+    timings.skip("Transcription", "resumed")
+    with timings.measure("Diarization"):
+        pass
+    timings.skip("Speaker profiles", "no speaker labels")
+    timings.skip("Writing outputs / frames", "nothing requested")
+    timings.render(total_wall=0.75)
+
+    assert calls == [(
+        "Stage timing",
+        [("Stage", "left"), ("Time", "right")],
+        [
+            ["Audio preparation", "0.2s"],
+            ["Transcription", "skipped (resumed)"],
+            ["Diarization", "0.5s"],
+            ["Speaker profiles", "skipped (no speaker labels)"],
+            ["Writing outputs / frames", "skipped (nothing requested)"],
+            ["Total (wall)", "0.8s"],
+        ],
+    )]
+
+
+def test_stage_timings_pause_accumulate_and_preserve_skip_reason(monkeypatch):
+    clock = iter([0.0, 0.2, 1.0, 1.3, 2.0, 2.4, 10.0, 10.4, 30.0, 30.2])
+    monkeypatch.setattr(cli.time, "perf_counter", lambda: next(clock))
+    calls: list[list[list[str]]] = []
+    monkeypatch.setattr(cli.ui, "table", lambda _title, _columns, rows: calls.append(rows))
+
+    timings = cli._StageTimings()
+    with timings.measure("Diarization"):
+        pass
+    with timings.measure("Diarization"):
+        pass
+    timings.start("Writing outputs / frames")
+    timings.pause("Writing outputs / frames")
+    timings.resume("Writing outputs / frames")
+    timings.stop("Writing outputs / frames")
+    timings.skip("Speaker profiles", "disabled")
+    timings.skip("Speaker profiles", "no speaker labels")
+    timings.render(total_wall=119.99)
+
+    values = dict(calls[0])
+    assert values["Diarization"] == "0.5s"
+    assert values["Writing outputs / frames"] == "0.8s"
+    assert values["Speaker profiles"] == "skipped (disabled)"
+    assert values["Total (wall)"] == "2:00.0"
+
+
+def test_transcribe_renders_partial_timing_when_preparation_fails(monkeypatch, tmp_path):
+    audio = tmp_path / "meeting.m4a"
+    audio.write_bytes(b"fake audio")
+    clock = iter([0.0, 0.4])
+    monkeypatch.setattr(cli.time, "perf_counter", lambda: next(clock))
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config())
+    monkeypatch.setattr(cli, "_build_transcribe_args", lambda *_args: (_ for _ in ()).throw(RuntimeError("ffmpeg failed")))
+    tables: list[tuple[str | None, list[list[str]]]] = []
+    monkeypatch.setattr(cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)))
+
+    with pytest.raises(RuntimeError, match="ffmpeg failed"):
+        cli.cmd_transcribe(_transcribe_args(audio))
+
+    assert tables[0][0] == "Stage timing"
+    assert dict(tables[0][1])["Total (wall)"] == "0.4s"
 
 
 def test_recommend_model_empty_returns_zero():
@@ -816,6 +892,70 @@ def test_merge_still_raises_when_nothing_else_requested(tmp_path, monkeypatch):
 # ---------- command-level success paths and new fallback behaviors ----------
 
 
+def test_transcribe_stage_timing_excludes_naming_wait_but_total_includes_analysis_and_cleanup(
+    tmp_path, monkeypatch,
+):
+    """The command-level timer excludes human naming time from output writing,
+    while its wall total includes chained analysis and cleanup."""
+    audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(save_voice_profiles=False))
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    now = [0.0]
+    monkeypatch.setattr(time, "perf_counter", lambda: now[0])
+
+    def advance(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(
+        cli, "_run_diarize_or_fallback",
+        lambda *_args: advance(2.0) or [DiarSegment(start=0.0, end=4.0, speaker=0)],
+    )
+    monkeypatch.setattr(
+        cli, "_run_whisper_streaming",
+        lambda _cmd: advance(3.0) or SimpleNamespace(returncode=0),
+    )
+    monkeypatch.setattr(
+        cli.P, "compute_speaker_embeddings",
+        lambda *_args: advance(4.0) or {0: [1.0, 0.0]},
+    )
+    monkeypatch.setattr(cli.P, "auto_assign_names", lambda *_args, **_kwargs: ({}, {}))
+    monkeypatch.setattr(
+        cli, "_prompt_speaker_names",
+        lambda *_args, **_kwargs: advance(50.0) or {"Speaker A": "Alice"},
+    )
+    original_srt = cli.MR.format_labeled_srt
+    original_txt = cli.MR.format_dialogue_txt
+    monkeypatch.setattr(
+        cli.MR, "format_labeled_srt", lambda merged: advance(0.5) or original_srt(merged),
+    )
+    monkeypatch.setattr(
+        cli.MR, "format_dialogue_txt", lambda merged: advance(0.5) or original_txt(merged),
+    )
+    monkeypatch.setattr(cli, "cmd_analyze", lambda _args: advance(7.0) or 0)
+    original_cleanup = cli._remove_intermediate_audio
+    monkeypatch.setattr(
+        cli, "_remove_intermediate_audio",
+        lambda wav, source: advance(6.0) or original_cleanup(wav, source),
+    )
+    tables: list[tuple[str | None, list[list[str]]]] = []
+    monkeypatch.setattr(cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)))
+    args = _transcribe_args(audio, outputs="srt", speakers=1)
+    args.no_voice_profiles = False
+    args.name_speakers = True
+    args.no_name_speakers = False
+    args.analyze = True
+
+    assert cli.cmd_transcribe(args) == 0
+
+    timing = dict(next(rows for title, rows in tables if title == "Stage timing"))
+    assert timing["Diarization"] == "2.0s"
+    assert timing["Transcription"] == "3.0s"
+    assert timing["Speaker profiles"] == "4.0s"
+    assert timing["Writing outputs / frames"] == "1.0s"
+    assert timing["Analysis"] == "7.0s"
+    assert timing["Total (wall)"] == "1:13.0"
+
+
 def test_transcribe_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
     """Happy path: diarization succeeds -> labeled .speakers.srt/.txt/.html
     all written with letterized labels, and no degraded-run note."""
@@ -825,6 +965,10 @@ def test_transcribe_diarized_success_writes_labeled_outputs(tmp_path, monkeypatc
         DiarSegment(start=3.0, end=5.0, speaker=1),   # Speaker B
     ]
     monkeypatch.setattr(cli, "_run_diarize_or_fallback", lambda wav, config, args: diar)
+    tables: list[tuple[str | None, list[list[object]]]] = []
+    monkeypatch.setattr(
+        cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)),
+    )
 
     rc = cli.cmd_transcribe(_transcribe_args(audio, outputs="srt,html", speakers=2))
 
@@ -836,6 +980,11 @@ def test_transcribe_diarized_success_writes_labeled_outputs(tmp_path, monkeypatc
     html = (tmp_path / "meeting.speakers.html").read_text(encoding="utf-8")
     assert "Speaker A" in html
     assert 'class="note"' not in html  # not a degraded run
+    timing_rows = next(rows for title, rows in tables if title == "Stage timing")
+    assert [row[0] for row in timing_rows] == [
+        "Audio preparation", "Transcription", "Diarization", "Speaker profiles",
+        "Writing outputs / frames", "Total (wall)",
+    ]
 
 
 def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
@@ -853,6 +1002,10 @@ def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
             DiarSegment(start=3.0, end=5.0, speaker=1),
         ],
     )
+    tables: list[tuple[str | None, list[list[object]]]] = []
+    monkeypatch.setattr(
+        cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)),
+    )
 
     rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=2))
 
@@ -864,6 +1017,11 @@ def test_merge_diarized_success_writes_labeled_outputs(tmp_path, monkeypatch):
     html = (tmp_path / "meeting.m4a.speakers.html").read_text(encoding="utf-8")
     assert "Speaker A" in html
     assert 'class="note"' not in html
+    timing_rows = next(rows for title, rows in tables if title == "Stage timing")
+    assert [row[0] for row in timing_rows] == [
+        "Audio preparation", "Transcription", "Diarization", "Speaker profiles",
+        "Writing outputs / frames", "Total (wall)",
+    ]
 
 
 @pytest.mark.parametrize("command", ["transcribe", "merge"])

@@ -31,7 +31,6 @@ from __future__ import annotations
 import json
 import math
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -255,7 +254,6 @@ def compute_speaker_embeddings(
             "initialization; check its stderr for any provider fallback.",
             kind="warn",
         )
-    started = time.monotonic()
     try:
         extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
             sherpa_onnx.SpeakerEmbeddingExtractorConfig(
@@ -311,8 +309,6 @@ def compute_speaker_embeddings(
                 off += chunk
         if vecs:
             out[spk] = _average_vectors(vecs, dim)
-    elapsed = int(time.monotonic() - started)
-    ui.muted(f"Speaker profile embeddings completed in {elapsed // 60}:{elapsed % 60:02d}.")
     return out
 
 
