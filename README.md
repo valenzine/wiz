@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.17.1-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.18.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -174,6 +174,20 @@ Speakers  4 detected
 │   · recording.speakers.html
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+I get a compact stage timing table at the end of `transcribe` and `merge`.
+I can compare audio preparation, transcription, diarization, speaker profiles,
+and output writing (including frames), with skipped stages identified explicitly.
+Chained `--analyze` has its own row when it runs. Durations retain fractions of
+a second so short stages remain useful for comparisons.
+
+Whisper's own output files are included in transcription time; the writing row
+measures wiz's labeled transcripts, HTML, and frames.
+
+`Total (wall)` measures the entire command, including setup, interactive prompts,
+cleanup, and chained analysis. The processing rows exclude time spent waiting for
+speaker names, so their sum can be smaller than the total. A dry run does not
+report execution durations.
 
 ## Recipes
 
