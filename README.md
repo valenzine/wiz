@@ -493,13 +493,11 @@ wiz merge recording.mov --speakers-names Alice,Bob,Carol,Dave
 <img src="docs/assets/wiz-voices.svg" alt="Name Speaker B as Bob once, and the next recording with the same people is labeled automatically, with no flags." width="100%">
 
 
-When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match exceeds `speaker_match_threshold` (default `0.8`).
+When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match is at or above `speaker_match_threshold` (default `0.8`).
 
-If diarization splits one person's voice into several clusters, I can match each
-cluster independently to the same stored profile. Each cluster takes its best
-compatible match at or above the threshold; weaker matches keep their generic
-speaker labels. Automatic matches leave my existing profiles unchanged; only
-names I confirm merge new samples into them.
+If diarization splits one person's voice into several clusters, wiz matches each cluster independently to the same stored profile. Each cluster takes its best compatible match at or above the threshold; weaker matches keep their generic speaker labels. Automatic matches leave existing profiles unchanged; only confirmed names merge new samples into them.
+
+Matches are similarity estimates. Use `--name-speakers` to confirm or correct the suggested names. When several fragments are confirmed with the same name, wiz saves one sample for that name, using the confirmed fragment with the most transcript talk time. Unconfirmed fragments do not contribute to that sample.
 
 Profiles live at `~/.config/wiz/speakers/<Name>.json` (one file per name, inspectable and easy to delete). wiz saves a profile automatically whenever a speaker receives a real name — so the first time you transcribe a meeting with `--speakers-names Alice,Bob,Carol,Dave`, those four voice profiles are stored; the next recording with the same people is labeled automatically, no flags needed.
 
