@@ -960,8 +960,9 @@ def _save_named_profiles(
     name_map: dict[str, str],
     cluster_embeddings: dict[int, list[float]],
     auto_labels: set[str] | None = None,
+    label_order: list[str] | None = None,
 ) -> None:
-    """Save (or merge) a voice profile for each speaker that received a real name.
+    """Save (or merge) one voice profile per real name from this run.
 
     ``name_map`` is keyed by ``Speaker A/B/...`` labels; we map those back to
     cluster ids via the merge module's letter ordering and persist the
@@ -985,8 +986,10 @@ def _save_named_profiles(
         f"Speaker {letter}": i for i, letter in enumerate(_SPEAKER_LETTERS)
     }
     auto_labels = auto_labels or set()
-    saved = 0
-    merged_count = 0
+    # The order is calculated from the original diarization labels, before
+    # relabeling turns multiple clusters into the same visible name.
+    label_rank = {label: i for i, label in enumerate(label_order or [])}
+    candidates: dict[str, list[tuple[str, int, bool]]] = {}
     for label, name in name_map.items():
         cid = label_to_cid.get(label)
         if cid is None or cid not in cluster_embeddings:
@@ -994,7 +997,20 @@ def _save_named_profiles(
         # Don't save a profile whose "name" is just the default Speaker label.
         if not name or name.startswith("Speaker "):
             continue
-        is_auto = label in auto_labels
+        candidates.setdefault(name, []).append((label, cid, label in auto_labels))
+
+    saved = 0
+    merged_count = 0
+    for name, named_candidates in candidates.items():
+        # A human confirmation supersedes any automatic match for the same
+        # name. Within the selected provenance, retain the longest-talking
+        # cluster (the first tie is the original order of appearance).
+        confirmed = [item for item in named_candidates if not item[2]]
+        eligible = confirmed or named_candidates
+        label, cid, is_auto = min(
+            eligible,
+            key=lambda item: (label_rank.get(item[0], len(label_rank)), item[0]),
+        )
         try:
             existed = P._profile_path(name).exists()
             path = P.save_profile(name, cluster_embeddings[cid], samples=1, auto_match=is_auto)
@@ -1062,6 +1078,7 @@ def _write_labeled_outputs(
     normally.
     """
     name_map: dict[str, str] = {}
+    profile_save_order = MR.speakers_by_talk_time(merged)
     # Labels whose name arrived via profile auto-match (M3, wave-1): tracked
     # so profile saving can flag those saves as machine-sourced. Any later
     # HUMAN source that writes the label — --speakers-names, the interactive
@@ -1072,7 +1089,10 @@ def _write_labeled_outputs(
     if profile_names and merged:
         name_map.update(profile_names)
         auto_labels.update(profile_names)
-        ui.info(f"Auto-matched {len(profile_names)} speaker(s) from voice profiles.")
+        ui.info(
+            f"Auto-matched {len(profile_names)} cluster(s) to "
+            f"{len(set(profile_names.values()))} distinct profile name(s) from voice profiles."
+        )
         for lbl, nm in profile_names.items():
             ui.muted(f"  {lbl} -> {nm}")
     # 2. Non-interactive --speakers-names override profile matches.
@@ -1112,7 +1132,12 @@ def _write_labeled_outputs(
         )
     # Save voice profiles for speakers that received a real name.
     if save_profiles and cluster_embeddings and name_map:
-        _save_named_profiles(name_map, cluster_embeddings, auto_labels=auto_labels)
+        _save_named_profiles(
+            name_map,
+            cluster_embeddings,
+            auto_labels=auto_labels,
+            label_order=profile_save_order,
+        )
     return srt_out, txt_out, html_out, name_map
 
 
