@@ -121,11 +121,32 @@ def test_config_defaults_and_persistence(tmp_path, monkeypatch):
     defaults = cfg.load()
     assert (defaults.diarization_provider, defaults.diarization_threads) == ("cpu", 1)
 
-    defaults.diarization_provider = "coreml"
-    defaults.diarization_threads = 4
-    cfg.save(defaults)
+    cfg.save({"diarization_provider": "coreml", "diarization_threads": 4})
     loaded = cfg.load()
     assert (loaded.diarization_provider, loaded.diarization_threads) == ("coreml", 4)
+
+
+def test_config_set_persists_only_the_requested_execution_setting(tmp_path, monkeypatch):
+    """An explicit default must remain explicit without materializing defaults.
+
+    ``config set`` is a surgical update: existing known and future keys stay
+    intact, while unset defaults do not become sticky configuration.
+    """
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cfg, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    config_path.write_text(
+        'ai_base_url = "https://configured.example/v1"\nfuture_key = "keep"\n',
+        encoding="utf-8",
+    )
+
+    assert cli.cmd_config_set(SimpleNamespace(assignment="diarization_threads=1")) == 0
+
+    assert config_path.read_text(encoding="utf-8") == (
+        'ai_base_url = "https://configured.example/v1"\n'
+        'future_key = "keep"\n'
+        "diarization_threads = 1\n"
+    )
 
 
 @pytest.mark.parametrize("command", ["transcribe", "merge", "match"])
