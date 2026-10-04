@@ -11,7 +11,8 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Fixed
 
-- Enable transcript search on HTML exports without screenshots.
+- Enable transcript search on HTML exports without screenshots. Match phrases across paragraph breaks and exclude frame-gallery controls from search.
+- Refresh generic transcripts with multiple paragraphs while preserving existing transcripts with named speakers. Avoid paragraph breaks before lowercase continuations after abbreviations or ellipses.
 
 ## [0.18.2] - 2026-10-04
 
