@@ -2664,6 +2664,66 @@ def test_speakers_match_dim_mismatch_renders_na_not_crash(tmp_path, monkeypatch,
     assert "s" in timing["Speaker profiles"]
 
 
+@pytest.mark.parametrize("command", ["transcribe", "merge", "speakers match"])
+def test_commands_match_split_clusters_without_changing_profiles(tmp_path, monkeypatch, command):
+    """Use the real matcher and naming flow with isolated synthetic profiles."""
+    audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
+    _stub_setup_ready(monkeypatch)
+    texts = ["first fragment", "other person", "second fragment", "unknown guest"]
+    payload = {"transcription": [
+        {"timestamps": {"from": f"00:00:{i:02d},000", "to": f"00:00:{i + 1:02d},000"},
+         "text": text}
+        for i, text in enumerate(texts)
+    ]}
+    (tmp_path / "meeting.m4a.json").write_text(json.dumps(payload), encoding="utf-8")
+    diar = [DiarSegment(start=float(i), end=float(i + 1), speaker=i) for i in range(4)]
+    monkeypatch.setattr(cli.D, "run_diarization", lambda *_args, **_kwargs: diar)
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0, 0.0, 0.0], samples=4)
+    cli.P.save_profile("Bob", [0.0, 1.0, 0.0], samples=3, auto_match=True)
+    before = {p.name: p.read_bytes() for p in cli.P.profiles_dir().glob("*.json")}
+    monkeypatch.setattr(
+        cli.P, "compute_speaker_embeddings",
+        lambda *_args: {
+            0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0],
+            2: [0.99, 0.01, 0.0], 3: [0.0, 0.0, 1.0],
+        },
+    )
+    tables = []
+    monkeypatch.setattr(cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)))
+
+    if command == "transcribe":
+        args = _transcribe_args(audio, speakers=0)
+        args.no_voice_profiles = False
+        rc = cli.cmd_transcribe(args)
+        output_base = tmp_path / "meeting"
+    elif command == "merge":
+        args = _merge_args(audio, speakers=0)
+        args.no_voice_profiles = False
+        rc = cli.cmd_merge(args)
+        output_base = tmp_path / "meeting.m4a"
+    else:
+        args = SimpleNamespace(file=str(audio), speakers=0, cluster_threshold=None,
+                               no_auto_diarization_setup=False)
+        rc = cli.cmd_speakers_match(args)
+
+    assert rc == 0
+    expected = ["Alice", "Bob", "Alice", "Speaker D"]
+    if command == "speakers match":
+        rows = next(rows for title, rows in tables if title == "Speaker match (dry run)")
+        assert [row[1] for row in rows] == ["Alice", "Bob", "Alice", "(no match)"]
+    else:
+        srt = Path(str(output_base) + ".speakers.srt").read_text(encoding="utf-8")
+        txt = Path(str(output_base) + ".speakers.txt").read_text(encoding="utf-8")
+        html = Path(str(output_base) + ".speakers.html").read_text(encoding="utf-8")
+        assert [line for line in srt.splitlines() if ": " in line] == [
+            f"{label}: {text}" for label, text in zip(expected, texts)
+        ]
+        assert [line.split(" (", 1)[0] for line in txt.splitlines() if line] == expected
+        assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html) == expected
+    assert {p.name: p.read_bytes() for p in cli.P.profiles_dir().glob("*.json")} == before
+
+
 def test_merge_auto_match_never_merges_existing_profile(tmp_path, monkeypatch, capsys):
     """M3 cli adoption: a name that arrived via VOICE-PROFILE auto-match
     never merges into an existing profile — save_profile's guard keeps the

@@ -235,17 +235,22 @@ def test_match_speakers_below_threshold_returns_none():
     assert matches[0] is None
 
 
-def test_match_speakers_one_to_one_no_double_assignment():
-    """A profile can't be assigned to two clusters even if it's the best for both."""
-    profiles = [P.Profile(name="Alice", embedding=[1.0, 0.0], dim=2, created="")]
+def test_match_speakers_reuses_best_profile_without_second_best_fallback():
+    """Each cluster independently selects its best compatible profile."""
+    profiles = [
+        P.Profile(name="Alice", embedding=[1.0, 0.0], dim=2, created=""),
+        P.Profile(name="Bob", embedding=[0.0, 1.0], dim=2, created=""),
+    ]
     clusters = {
         0: [1.0, 0.0],  # matches Alice at 1.0
-        1: [0.99, 0.01], # also near Alice but lower score
+        1: [0.9, 0.8],  # Alice is best; Bob is also above threshold
+        2: [0.1, -0.9],  # no profile reaches the threshold
     }
-    matches = P.match_speakers(clusters, profiles, threshold=0.8)
-    # Only the best cluster (0) gets Alice; cluster 1 gets None.
+    matches = P.match_speakers(clusters, profiles, threshold=0.6)
+
     assert matches[0] is not None and matches[0][0] == "Alice"
-    assert matches[1] is None
+    assert matches[1] is not None and matches[1][0] == "Alice"
+    assert matches[2] is None
 
 
 def test_match_speakers_empty_profiles_all_none():
