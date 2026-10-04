@@ -3244,3 +3244,29 @@ def test_looks_degraded_txt_accepts_multi_paragraph_generic_turn(tmp_path):
     foreign = tmp_path / "foreign.speakers.txt"
     foreign.write_text("Some notes\n\nSpeaker (00:00:01): hi\n", encoding="utf-8")
     assert not cli._looks_degraded_txt(foreign)
+
+
+def test_degraded_fallback_keeps_named_txt_with_long_label(tmp_path):
+    """A named turn longer than 80 characters must not be overwritten."""
+    from wiz import merge as MR
+
+    long_name = "A" * 81
+    existing = MR.format_dialogue_txt([
+        (MR.WhisperSeg(0, 1, "Generic."), "Speaker"),
+        (MR.WhisperSeg(1, 2, "Named."), long_name),
+    ]) + "\n"
+    txt_out = tmp_path / "recording.speakers.txt"
+    txt_out.write_text(existing, encoding="utf-8")
+
+    written, kept = cli._write_html_transcript(
+        [(MR.WhisperSeg(0, 1, "Replacement."), "Speaker")],
+        tmp_path / "recording",
+        None,
+        "recording",
+        note=cli._GENERIC_LABEL_NOTE,
+        transcript_txt=True,
+    )
+
+    assert txt_out in kept
+    assert txt_out not in written
+    assert txt_out.read_text(encoding="utf-8") == existing
