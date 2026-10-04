@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.18.1] - 2026-10-04
+
+### Fixed
+
+- When diarization splits one person's voice into several clusters, I can now
+  match all of those clusters to the same stored speaker profile. Each cluster
+  uses its best match at or above the threshold, keeping names consistent across
+  SRT, dialogue TXT, HTML, and `speakers match`. Automatic matches keep existing
+  profiles unchanged.
+
 ## [0.18.0] - 2026-10-04
 
 ### Added

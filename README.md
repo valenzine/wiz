@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.18.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.18.1-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -494,6 +494,12 @@ wiz merge recording.mov --speakers-names Alice,Bob,Carol,Dave
 
 
 When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match exceeds `speaker_match_threshold` (default `0.8`).
+
+If diarization splits one person's voice into several clusters, I can match each
+cluster independently to the same stored profile. Each cluster takes its best
+compatible match at or above the threshold; weaker matches keep their generic
+speaker labels. Automatic matches leave my existing profiles unchanged; only
+names I confirm merge new samples into them.
 
 Profiles live at `~/.config/wiz/speakers/<Name>.json` (one file per name, inspectable and easy to delete). wiz saves a profile automatically whenever a speaker receives a real name — so the first time you transcribe a meeting with `--speakers-names Alice,Bob,Carol,Dave`, those four voice profiles are stored; the next recording with the same people is labeled automatically, no flags needed.
 
