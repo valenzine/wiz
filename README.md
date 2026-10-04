@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.18.1-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.18.2-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -271,6 +271,9 @@ wiz config show                       # print current config + model search dirs
 wiz config edit                       # open ~/.config/wiz/config.toml in $EDITOR
 wiz config set model=turbo
 wiz config set threads=8
+wiz config set diarization_provider=cpu
+wiz config set diarization_threads=8
+wiz config set diarization_window_shift=0.2
 wiz config set ai_model=llava
 wiz config set speaker_match_threshold=0.85
 ```
@@ -308,7 +311,13 @@ It re-injects the `diarize` extra when that one is already installed, so speaker
 
 ## Configuration
 
-Config lives at `~/.config/wiz/config.toml` (created on first `config edit`/`set`):
+Config lives at `~/.config/wiz/config.toml`. Missing keys use the current built-in defaults. `wiz config set` saves only the requested key; remembered diarization setup and AI-model choices also save only their selected setting. Existing settings are preserved. `wiz config edit` writes a full settings snapshot before opening it for manual editing.
+
+Saving refuses configuration values the flat writer cannot preserve, including TOML tables and dates. The existing file remains unchanged; edit it directly in a text editor to remove or update those values.
+
+Provider, thread count and window shift can be saved with the commands above. Their command-line overrides apply only to the current run of `transcribe`, `merge` or `speakers match`.
+
+Example configuration:
 
 ```toml
 model = "turbo"

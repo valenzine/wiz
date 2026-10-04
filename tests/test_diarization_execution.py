@@ -121,11 +121,82 @@ def test_config_defaults_and_persistence(tmp_path, monkeypatch):
     defaults = cfg.load()
     assert (defaults.diarization_provider, defaults.diarization_threads) == ("cpu", 1)
 
-    defaults.diarization_provider = "coreml"
-    defaults.diarization_threads = 4
-    cfg.save(defaults)
+    cfg.save({"diarization_provider": "coreml", "diarization_threads": 4})
     loaded = cfg.load()
     assert (loaded.diarization_provider, loaded.diarization_threads) == ("coreml", 4)
+
+
+def test_config_set_persists_only_the_requested_execution_setting(tmp_path, monkeypatch):
+    """An explicit default must remain explicit without materializing defaults.
+
+    ``config set`` is a surgical update: existing known and future keys stay
+    intact, while unset defaults do not become sticky configuration.
+    """
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cfg, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    config_path.write_text(
+        'ai_base_url = "https://configured.example/v1"\nfuture_key = "keep"\n',
+        encoding="utf-8",
+    )
+
+    assert cli.cmd_config_set(SimpleNamespace(assignment="diarization_threads=1")) == 0
+
+    assert config_path.read_text(encoding="utf-8") == (
+        'ai_base_url = "https://configured.example/v1"\n'
+        'future_key = "keep"\n'
+        "diarization_threads = 1\n"
+    )
+
+
+@pytest.mark.parametrize("key", ["outputs", "model_dirs", "extra_args"])
+def test_config_set_persists_list_settings_as_lists(tmp_path, monkeypatch, key):
+    """A comma-separated value for a list key must be stored as a TOML array."""
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cfg, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+
+    assert cli.cmd_config_set(SimpleNamespace(assignment=f"{key}=first, second")) == 0
+
+    assert config_path.read_text(encoding="utf-8") == f'{key} = ["first", "second"]\n'
+    assert getattr(cfg.load(), key) == ["first", "second"]
+
+
+def test_config_set_refuses_to_overwrite_a_corrupt_config(tmp_path, monkeypatch):
+    """A corrupt file must stop ``config set`` before save() rewrites it."""
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cfg, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    corrupt = 'model = "turbo"\nthreads = = 8\n'
+    config_path.write_text(corrupt, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="corrupt"):
+        cli.cmd_config_set(SimpleNamespace(assignment="diarization_threads=4"))
+
+    assert config_path.read_text(encoding="utf-8") == corrupt
+
+
+@pytest.mark.parametrize("unknown_setting", [
+    '[future]\nengine = "tesseract"\n',
+    '[[future]]\nengine = "tesseract"\n',
+    'future = 2026-10-04\n',
+    'future = [true, false]\n',
+])
+def test_config_set_preserves_file_with_unsupported_toml_values(
+    tmp_path, monkeypatch, unknown_setting,
+):
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cfg, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    original = ('threads = 4\n' + unknown_setting).encode("utf-8")
+    config_path.write_bytes(original)
+    assert cfg.load().threads == 4
+
+    with pytest.raises(RuntimeError, match="unsupported TOML value"):
+        cli.cmd_config_set(SimpleNamespace(assignment="threads=8"))
+
+    assert config_path.read_bytes() == original
+    assert cfg.load().threads == 4
 
 
 @pytest.mark.parametrize("command", ["transcribe", "merge", "match"])

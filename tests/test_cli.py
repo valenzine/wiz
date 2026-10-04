@@ -229,6 +229,29 @@ def test_recommend_model_prefers_cloud_vision_when_requested():
     assert models[idx] == "qwen3.5:cloud"
 
 
+def test_model_picker_persists_only_the_chosen_model(tmp_path, monkeypatch):
+    """Choosing a model must not persist command-scoped configuration.
+
+    The picker receives the active config, which can include CLI overrides;
+    only the user's model choice belongs in persistent configuration.
+    """
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(cli.cfg, "CONFIG_PATH", config_path)
+    config_path.write_text('future_key = "keep"\n', encoding="utf-8")
+    monkeypatch.setattr(cli.AI, "list_ollama_models", lambda _url: ["llama3.1"])
+    monkeypatch.setattr(cli.AI, "probe_model", lambda *_args: (True, ""))
+    monkeypatch.setattr(builtins, "input", lambda _prompt="": "")
+    config = cli.cfg.Config(ai_base_url="https://command-line.example/v1", ai_api_key="ephemeral")
+
+    assert cli._pick_model_interactive(config, prefer_vision=False) == "llama3.1"
+    assert config.ai_model == "llama3.1"
+    assert config_path.read_text(encoding="utf-8") == (
+        'future_key = "keep"\n'
+        'ai_model = "llama3.1"\n'
+    )
+
+
 # ---------- _looks_vision_capable ----------
 
 def test_looks_vision_capable_true_for_known_vision_models():
@@ -2094,15 +2117,19 @@ def test_consent_tty_yes_persists_true(tmp_path, monkeypatch):
     """Interactive y: allow, and remember the answer so the question is
     once-ever (config object AND on-disk file)."""
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(cli.cfg, "CONFIG_PATH", tmp_path / "config.toml")
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cli.cfg, "CONFIG_PATH", config_path)
+    config_path.write_text('future_key = "keep"\n', encoding="utf-8")
     _pin_ttys(monkeypatch, stdin_tty=True, stderr=_FakeTtyErr())
     monkeypatch.setattr(builtins, "input", lambda prompt="": "y")
-    config = cli.cfg.Config()
+    config = cli.cfg.Config(model="ephemeral-cli-override", diarization_provider="coreml")
 
     assert cli._auto_setup_consent(config) is True
     assert config.auto_diarization_setup is True
-    saved = (tmp_path / "config.toml").read_text(encoding="utf-8")
-    assert "auto_diarization_setup = true" in saved
+    assert config_path.read_text(encoding="utf-8") == (
+        'future_key = "keep"\n'
+        "auto_diarization_setup = true\n"
+    )
 
 
 def test_consent_tty_no_persists_false_with_way_back_hint(tmp_path, monkeypatch):
@@ -2257,15 +2284,16 @@ def test_config_save_tri_state_none_semantics(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(cli.cfg, "CONFIG_PATH", tmp_path / "config.toml")
 
-    cli.cfg.save(cli.cfg.Config())  # a session that never answered
+    cli.cfg.save({"auto_diarization_setup": None})  # a session that never answered
     assert "auto_diarization_setup" not in (tmp_path / "config.toml").read_text(encoding="utf-8")
 
-    config = cli.cfg.Config()
-    config.auto_diarization_setup = True
-    cli.cfg.save(config)
+    cli.cfg.save({"auto_diarization_setup": True})
     assert "auto_diarization_setup = true" in (tmp_path / "config.toml").read_text(encoding="utf-8")
 
-    cli.cfg.save(cli.cfg.Config())  # a later fresh session: None must not win
+    cli.cfg.save({"auto_diarization_setup": None})  # an unanswered value must not win
+    assert cli.cfg.load().auto_diarization_setup is True
+
+    cli.cfg.save({})  # an omitted setting must not win either
     assert cli.cfg.load().auto_diarization_setup is True
 
 
