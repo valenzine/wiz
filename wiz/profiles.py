@@ -360,8 +360,9 @@ def match_speakers(
 
     Returns ``{cluster_id: (name, score) | None}``. A cluster maps to ``None``
     when no profile reaches the threshold (i.e. an unknown speaker). Ties are
-    broken by higher score; the same profile is never assigned to two clusters
-    — each name is claimed by its single best-scoring cluster.
+    broken deterministically by the existing descending score, cluster, and
+    name ordering. Each cluster is matched independently, so the same profile
+    may match multiple clusters.
     """
     profiles = profiles if profiles is not None else load_profiles()
     if not profiles or not cluster_embeddings:
@@ -387,16 +388,14 @@ def match_speakers(
     scored.sort(reverse=True)
 
     matched: dict[int, tuple[str, float] | None] = {cid: None for cid in cluster_embeddings}
-    used_names: set[str] = set()
     used_clusters: set[int] = set()
     for score, cid, name in scored:
         if score < threshold:
             break
-        if cid in used_clusters or name in used_names:
+        if cid in used_clusters:
             continue
         matched[cid] = (name, score)
         used_clusters.add(cid)
-        used_names.add(name)
     return matched
 
 
