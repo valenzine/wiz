@@ -313,6 +313,8 @@ It re-injects the `diarize` extra when that one is already installed, so speaker
 
 Config lives at `~/.config/wiz/config.toml`. Missing keys use the current built-in defaults. `wiz config set` saves only the requested key; remembered diarization setup and AI-model choices also save only their selected setting. Existing settings are preserved. `wiz config edit` writes a full settings snapshot before opening it for manual editing.
 
+Saving refuses configuration values the flat writer cannot preserve, including TOML tables and dates. The existing file remains unchanged; edit it directly in a text editor to remove or update those values.
+
 Provider, thread count and window shift can be saved with the commands above. Their command-line overrides apply only to the current run of `transcribe`, `merge` or `speakers match`.
 
 Example configuration:

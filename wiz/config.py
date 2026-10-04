@@ -193,7 +193,7 @@ def _escape_toml_string(value: str) -> str:
 
 
 def _emit_toml(data: dict[str, Any]) -> str:
-    """Minimal TOML writer for our flat config schema."""
+    """Serialize the flat config schema, refusing values it cannot preserve."""
     lines: list[str] = []
     for key, value in data.items():
         if value is None:
@@ -217,11 +217,19 @@ def _emit_toml(data: dict[str, Any]) -> str:
                     '"' + _escape_toml_string(v) + '"' for v in value
                 )
                 lines.append(f"{key} = [{items}]")
-            else:
+            elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
                 items = ", ".join(str(v) for v in value)
                 lines.append(f"{key} = [{items}]")
+            else:
+                raise RuntimeError(
+                    f"Cannot save setting {key!r}: unsupported TOML value. "
+                    f"Edit {CONFIG_PATH} manually; the existing file has not been changed."
+                )
         else:
-            lines.append(f"{key} = {value!r}")
+            raise RuntimeError(
+                f"Cannot save setting {key!r}: unsupported TOML value. "
+                f"Edit {CONFIG_PATH} manually; the existing file has not been changed."
+            )
     return "\n".join(lines) + "\n"
 
 

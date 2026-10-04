@@ -2117,8 +2117,8 @@ def test_consent_tty_yes_persists_true(tmp_path, monkeypatch):
     """Interactive y: allow, and remember the answer so the question is
     once-ever (config object AND on-disk file)."""
     monkeypatch.setattr(cli.cfg, "CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(cli.cfg, "CONFIG_PATH", tmp_path / "config.toml")
     config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(cli.cfg, "CONFIG_PATH", config_path)
     config_path.write_text('future_key = "keep"\n', encoding="utf-8")
     _pin_ttys(monkeypatch, stdin_tty=True, stderr=_FakeTtyErr())
     monkeypatch.setattr(builtins, "input", lambda prompt="": "y")

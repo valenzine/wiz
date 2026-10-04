@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format is based on 
 ### Fixed
 
 - Save only requested settings when using `config set` or remembering diarization setup and AI-model choices. Preserve existing settings and leave unspecified defaults unset, so future default changes remain effective.
+- Store comma-separated list settings as TOML arrays. Protect malformed configuration files from `config set` writes, and refuse saves containing values the flat configuration writer cannot preserve.
 
 ## [0.18.1] - 2026-10-04
 

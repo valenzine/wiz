@@ -2684,7 +2684,8 @@ def _coerce(value: str, field_type: type):
         return int(value)
     if ft == "float":
         return float(value)
-    if ft == "list":
+    if ft == "list" or ft.startswith("list["):
+        # Annotations are strings here ("list[str]"), never the bare "list".
         return [v.strip() for v in value.split(",") if v.strip()]
     return value
 
@@ -2715,6 +2716,8 @@ def _validate_config_value(key: str, value: object) -> None:
 
 
 def cmd_config_set(args: argparse.Namespace) -> int:
+    # Loaded only to refuse a corrupt config: save() falls back to a clean
+    # write on an unreadable file, which would delete every other key.
     cfg.load()
     assignment = args.assignment
     if "=" not in assignment:
