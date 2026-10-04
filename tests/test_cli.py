@@ -2825,6 +2825,88 @@ def test_write_labeled_outputs_prompt_confirmation_upgrades_auto_label(tmp_path,
     assert data["source"] == "user"  # provenance upgraded from 'auto'
 
 
+def test_write_labeled_outputs_saves_duplicate_confirmed_name_once_from_longest_cluster(
+    tmp_path, monkeypatch,
+):
+    """Two Enter confirmations for Alice save only the longest cluster once."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    # Speaker B has more transcript talk time, so its embedding must be the
+    # single new sample. Enter accepts Alice for both suggested defaults.
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=2.0, text="short Alice fragment"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=2.0, end=7.0, text="long Alice fragment"), "Speaker B"),
+    ]
+    cli.P.save_profile("Alice", [0.0, 0.0], samples=2, auto_match=True)
+    answers = iter(["", ""])
+    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(answers))
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec", name_speakers=True,
+        profile_names={"Speaker A": "Alice", "Speaker B": "Alice"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    data = json.loads((tmp_path / "Alice.json").read_text(encoding="utf-8"))
+    assert data["samples"] == 3
+    assert data["source"] == "user"
+    assert data["embedding"] == [0.0, 1 / 3]
+
+
+def test_write_labeled_outputs_prefers_confirmed_duplicate_over_longer_auto_cluster(
+    tmp_path, monkeypatch, capsys,
+):
+    """A shorter human confirmation wins over an automatic duplicate."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=10.0, text="long automatic fragment"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=10.0, end=11.0, text="short confirmed fragment"), "Speaker B"),
+    ]
+    cli.P.save_profile("Alice", [0.0, 0.0], samples=2)
+    monkeypatch.setattr(
+        cli, "_prompt_speaker_names",
+        lambda _merged, default_names=None: {"Speaker B": "Alice"},
+    )
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec", name_speakers=True,
+        profile_names={"Speaker A": "Alice", "Speaker B": "Alice"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    data = json.loads((tmp_path / "Alice.json").read_text(encoding="utf-8"))
+    assert data["samples"] == 3
+    assert data["source"] == "user"
+    assert data["embedding"] == [0.0, 1 / 3]
+    assert "auto-match not merged" not in capsys.readouterr().err
+
+
+def test_write_labeled_outputs_reports_one_keep_hint_for_duplicate_auto_matches(
+    tmp_path, monkeypatch, capsys,
+):
+    """Repeated auto matches leave an existing profile untouched once per name."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=2.0, text="first fragment"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=2.0, end=5.0, text="second fragment"), "Speaker B"),
+    ]
+    cli.P.save_profile("Alice", [0.0, 0.0], samples=2)
+    before = (tmp_path / "Alice.json").read_bytes()
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec",
+        profile_names={"Speaker A": "Alice", "Speaker B": "Alice"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    assert (tmp_path / "Alice.json").read_bytes() == before
+    err = capsys.readouterr().err
+    assert err.count("auto-match not merged") == 1
+    assert "Auto-matched 2 cluster(s) to 1 distinct profile name(s)" in err
+
+
 def test_merge_speakers_names_overrides_wrong_auto_match(tmp_path, monkeypatch, capsys):
     """W2-M15: --speakers-names is a HUMAN confirmation and must override a
     wrong auto-match. A stored profile whose centroid sits exactly on the

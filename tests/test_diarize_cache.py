@@ -260,6 +260,20 @@ def test_match_speakers_empty_profiles_all_none():
     assert matches[1] is None
 
 
+def test_match_speakers_threshold_boundary_and_ties_ignore_profile_order(capsys):
+    profiles = [
+        P.Profile(name="Alice", embedding=[1.0, 0.0], dim=2, created=""),
+        P.Profile(name="Zoe", embedding=[1.0, 0.0], dim=2, created=""),
+        P.Profile(name="Incompatible", embedding=[1.0], dim=1, created=""),
+    ]
+    clusters = {0: [0.8, 0.6], 1: [0.0, 1.0]}
+    expected = {0: ("Zoe", 0.8), 1: None}
+    assert P.match_speakers(clusters, profiles, threshold=0.8) == expected
+    assert P.match_speakers(clusters, profiles[::-1], threshold=0.8) == expected
+    warnings = capsys.readouterr().err
+    assert warnings.count("2 cluster/profile pair(s) skipped") == 2
+
+
 def test_match_speakers_empty_clusters():
     profiles = [P.Profile(name="Alice", embedding=[1.0], dim=1, created="")]
     assert P.match_speakers({}, profiles, threshold=0.8) == {}
