@@ -1,3 +1,3 @@
 """wiz — a transcription CLI for meetings, screen recordings, and interviews."""
 
-__version__ = "0.18.1"
+__version__ = "0.18.2"
