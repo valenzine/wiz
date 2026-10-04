@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.18.2-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.19.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -432,7 +432,7 @@ When diarization is about to run but sherpa-onnx or its models aren't set up yet
 This produces the normal whisper-cli outputs (SRT, JSON) plus two labeled files alongside the input:
 
 - `*.speakers.srt` — SRT with `Speaker A: ...` (or real names) per cue
-- `*.speakers.txt` — readable dialogue transcript (`Speaker A (00:01:23): text`), consecutive same-speaker lines merged
+- `*.speakers.txt` — readable dialogue transcript (`Speaker A (00:01:23): text`), consecutive same-speaker fragments joined into turns with paragraph breaks at existing sentence boundaries
 - `*.wav.diar.json` — cached diarization result (reused by later `wiz merge` runs with the same `--speakers`/`--cluster-threshold`)
 
 When `--screenshots` is set (video inputs only), wiz also writes:
@@ -444,13 +444,15 @@ For video inputs `--screenshots` is on by default; pass `--no-screenshots` to sk
 
 ### HTML transcript
 
-Add `html` to `--outputs` (or pass `--outputs html` to `wiz merge`) to write a self-contained `<stem>.speakers.html` alongside the input. Each segment is rendered as a color-coded cue with a timestamp link, the speaker label, and (when `--screenshots` was set) the on-screen frame inlined as a base64 `data:` URI — so the file is fully portable with no external image dependencies.
+Add `html` to `--outputs` (or pass `--outputs html` to `wiz merge`) to write a self-contained `<stem>.speakers.html` alongside the input. Consecutive fragments with the same final speaker name form one turn with a start timestamp and readable paragraphs. Longer paragraphs break after supplied sentence-ending punctuation; words and punctuation are preserved. Screenshots retain their original segment references and are inlined as base64 `data:` URIs, with multiple frames in a turn available in an expandable gallery. The file is fully portable with no external image dependencies.
 
 Because the HTML is built from the parsed whisper JSON, `--outputs html` also forces JSON output (`-oj`): an extra `<stem>.json` file remains alongside the input even when you only asked for `html`.
 
 If diarization is unavailable (sherpa-onnx not installed or it produced no segments), an `--outputs html` passed on that invocation is still honored instead of being silently skipped — every cue gets a bare generic `Speaker` label (not the letterized `Speaker A` used for real diarization), and a muted note line at the top of the page records that no diarization ran, so a degraded page is never mistaken for a one-speaker transcript. The labeled `.speakers.srt` is not produced in that case; it requires real diarization. On audio runs a generic-label `.speakers.txt` is still written so `wiz analyze` can find a transcript. Existing speaker outputs from an earlier diarized run are never overwritten — files carrying real speaker labels are kept with a warning rather than collapsed to generic labels, while existing degraded (generic-label) files are refreshed so identical re-runs stay correct.
 
-The transcript page has a sticky header with the title, a color-coded speaker legend, and a live search box that filters cues by text or speaker. Each cue is a card with a left color border matching its speaker and a hover lift. Clicking any frame thumbnail opens a fullscreen lightbox overlay (close with the × button, the backdrop, or the Escape key). The layout is responsive down to mobile widths.
+SRT exports retain their timed subtitle cues. TXT and HTML use speaker turns for reading, with one timestamp per turn rather than one per transcription fragment.
+
+The transcript page has a sticky header with the title, a color-coded speaker legend, and a live search box that filters cues by text or speaker. Each speaker turn is a card with a left color border matching its speaker and a hover lift. Clicking any frame thumbnail opens a fullscreen lightbox overlay (close with the × button, the backdrop, or the Escape key). The layout is responsive down to mobile widths.
 
 ```bash
 # Transcribe + diarize + capture frames + write HTML transcript

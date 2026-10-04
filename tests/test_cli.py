@@ -2895,7 +2895,7 @@ def test_combined_speaker_naming_preserves_cluster_identity_for_profile_saves(
     # Dialogue TXT combines consecutive cues belonging to the same speaker.
     turn_names = [name for index, name in enumerate(expected_names) if not index or name != expected_names[index - 1]]
     assert [line.split(" (", 1)[0] for line in txt.read_text().splitlines() if line] == turn_names
-    assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html.read_text()) == expected_names
+    assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html.read_text()) == turn_names
     for output in (srt, txt, html):
         assert "first voice" in output.read_text()
         assert "second voice" in output.read_text()
@@ -3221,3 +3221,52 @@ def test_upgrade_reinjects_the_diarize_requirement_into_the_pipx_package(monkeyp
     assert cli.cmd_upgrade(argparse.Namespace()) == 0
     assert calls[0] == ["pipx", "install", "--force", cli._INSTALL_SOURCE]
     assert calls[1] == ["pipx", "inject", "--force", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
+
+
+def test_looks_degraded_txt_accepts_multi_paragraph_generic_turn(tmp_path):
+    """A long generic-label turn continues in label-less paragraphs."""
+    from wiz import merge as MR
+
+    sentence = "This is a sentence that goes on for a while and ends."
+    merged = [(MR.WhisperSeg(i, i + 1, sentence), "Speaker") for i in range(30)]
+    degraded = tmp_path / "degraded.speakers.txt"
+    degraded.write_text(MR.format_dialogue_txt(merged) + "\n", encoding="utf-8")
+    assert "\n\n" in degraded.read_text(encoding="utf-8")
+    assert cli._looks_degraded_txt(degraded)
+
+    named = tmp_path / "named.speakers.txt"
+    named.write_text(
+        MR.format_dialogue_txt(merged + [(MR.WhisperSeg(30, 31, "Reply."), "Vadim")]) + "\n",
+        encoding="utf-8",
+    )
+    assert not cli._looks_degraded_txt(named)
+
+    foreign = tmp_path / "foreign.speakers.txt"
+    foreign.write_text("Some notes\n\nSpeaker (00:00:01): hi\n", encoding="utf-8")
+    assert not cli._looks_degraded_txt(foreign)
+
+
+def test_degraded_fallback_keeps_named_txt_with_long_label(tmp_path):
+    """A named turn longer than 80 characters must not be overwritten."""
+    from wiz import merge as MR
+
+    long_name = "A" * 81
+    existing = MR.format_dialogue_txt([
+        (MR.WhisperSeg(0, 1, "Generic."), "Speaker"),
+        (MR.WhisperSeg(1, 2, "Named."), long_name),
+    ]) + "\n"
+    txt_out = tmp_path / "recording.speakers.txt"
+    txt_out.write_text(existing, encoding="utf-8")
+
+    written, kept = cli._write_html_transcript(
+        [(MR.WhisperSeg(0, 1, "Replacement."), "Speaker")],
+        tmp_path / "recording",
+        None,
+        "recording",
+        note=cli._GENERIC_LABEL_NOTE,
+        transcript_txt=True,
+    )
+
+    assert txt_out in kept
+    assert txt_out not in written
+    assert txt_out.read_text(encoding="utf-8") == existing

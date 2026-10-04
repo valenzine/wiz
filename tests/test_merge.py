@@ -203,14 +203,16 @@ def test_format_speakers_html_frame_clickable_opens_lightbox(tmp_path):
     assert "lightbox" in html
 
 
-def test_format_speakers_html_no_lightbox_without_frames(tmp_path):
-    """No frames => no <img>, no lightbox overlay, no <script>."""
+def test_format_speakers_html_no_lightbox_without_frames_keeps_search(tmp_path):
+    """Audio-only exports keep working search without an image lightbox."""
     merged = [(_seg(0.0, 1.0, "hi"), "Speaker A")]
     empty_dir = tmp_path / "frames"
     empty_dir.mkdir()
     html = MR.format_speakers_html(merged, frames_dir=empty_dir)
     assert 'class="lightbox"' not in html
-    assert "<script>" not in html
+    assert "<script>" in html
+    assert "if (box)" in html
+    assert "search.addEventListener" in html
 
 
 def test_format_speakers_html_note_renders_muted_and_escaped():
@@ -305,3 +307,91 @@ def test_parse_whisper_json_all_malformed_returns_empty(tmp_path, capsys):
     )
     assert MR.parse_whisper_json(jf) == []
     assert "skipped 1" in capsys.readouterr().err
+
+
+def test_html_groups_fragments_into_turns_without_merging_across_reply():
+    merged = [
+        (_seg(0, 1, 'One'), 'Alice'),
+        (_seg(1, 2, 'complete sentence.'), 'Alice'),
+        (_seg(2, 3, 'Another sentence!'), 'Alice'),
+        (_seg(3, 4, 'Reply.'), 'Bob'),
+        (_seg(4, 5, 'Back again.'), 'Alice'),
+    ]
+    page = MR.format_speakers_html(merged)
+    assert page.count('class="cue"') == 3
+    assert '<p>One complete sentence. Another sentence!</p>' in page
+    assert 'href="#cue-1"' in page and 'href="#cue-4"' in page and 'href="#cue-5"' in page
+    assert page.count('class="ts"') == 3
+    assert '3 speaker turn(s)' in page
+    assert [s.text for s, _ in merged] == ['One', 'complete sentence.', 'Another sentence!', 'Reply.', 'Back again.']
+
+
+def test_html_grouping_retains_frames_by_original_segment_index(tmp_path):
+    merged = [
+        (_seg(0, 1, 'First.'), 'Alice'),
+        (_seg(1, 2, 'Second.'), 'Alice'),
+        (_seg(2, 3, 'Third.'), 'Bob'),
+    ]
+    for i in (2, 3):
+        (tmp_path / f'seg{i:04d}.jpg').write_bytes(f'image{i}'.encode())
+    page = MR.format_speakers_html(merged, frames_dir=tmp_path)
+    assert page.count('class="cue"') == 2
+    assert 'alt="frame 2"' in page and 'alt="frame 3"' in page
+    assert 'aW1hZ2Uy' in page and 'aW1hZ2Uz' in page
+    assert 'href="#cue-3"' in page
+
+
+def test_readable_exports_break_long_turn_after_complete_sentence():
+    # Each piece is a fragment, not a sentence; no break belongs between them.
+    fragment = 'a detailed explanation ' * 16
+    merged = [
+        (_seg(0, 1, fragment), 'Alice'),
+        (_seg(1, 2, fragment.rstrip() + '.'), 'Alice'),
+        (_seg(2, 3, 'Next thought.'), 'Alice'),
+    ]
+    txt = MR.format_dialogue_txt(merged)
+    page = MR.format_speakers_html(merged)
+    assert '.\n\nNext thought.' in txt
+    assert page.count('<p>') == 2
+    assert page.count('class="cue"') == 1
+    assert page.count('class="ts"') == 1
+    assert 'a detailed explanation. Next' not in page
+
+
+def test_grouped_exports_skip_empty_text_without_renumbering_frames(tmp_path):
+    merged = [
+        (_seg(0, 1, '  '), 'Alice'),
+        (_seg(1, 2, 'Hello.'), 'Alice'),
+        (_seg(2, 3, ''), 'Alice'),
+        (_seg(3, 4, 'World.'), 'Alice'),
+    ]
+    (tmp_path / 'seg0004.jpg').write_bytes(b'frame4')
+    page = MR.format_speakers_html(merged, frames_dir=tmp_path)
+    assert page.count('class="cue"') == 1
+    assert '<p>Hello. World.</p>' in page
+    assert 'alt="frame 4"' in page
+    assert 'href="#cue-2"' in page
+    assert MR.format_dialogue_txt(merged) == 'Alice (00:00:01): Hello. World.'
+
+
+def test_long_single_fragment_breaks_at_internal_sentence_boundary():
+    sentence = ('A long explanation ' * 35).rstrip() + '.'
+    merged = [(_seg(0, 60, sentence + ' Another sentence.'), 'Alice')]
+    txt = MR.format_dialogue_txt(merged)
+    assert txt == 'Alice (00:00:00): ' + sentence + '\n\nAnother sentence.'
+    assert MR.format_speakers_html(merged).count('<p>') == 2
+
+
+def test_short_sentence_before_long_unfinished_text_does_not_force_a_break():
+    text = 'First sentence. ' + 'unfinished text ' * 45
+    merged = [(_seg(0, 60, text), 'Alice')]
+    assert MR.format_dialogue_txt(merged) == 'Alice (00:00:00): ' + text.strip()
+    assert MR.format_speakers_html(merged).count('<p>') == 1
+
+
+def test_long_turn_does_not_break_before_lowercase_continuation():
+    text = ('word ' * 125).strip() + '... and then more. Next sentence.'
+    merged = [(_seg(0, 60, text), 'Alice')]
+    assert MR.format_dialogue_txt(merged) == (
+        'Alice (00:00:00): ' + text[: -len(' Next sentence.')] + '\n\nNext sentence.'
+    )

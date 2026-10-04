@@ -1166,8 +1166,11 @@ def _write_labeled_outputs(
 # A degraded (unlabeled) .speakers.txt line: "Speaker (00:01:23): text" —
 # every cue carries the bare generic label. A diarized txt always has
 # letterized ("Speaker A (") or real-name ("Vadim (") labels on at least one
-# line, so all-lines-match cleanly separates the two.
+# line, so checking actual turn headers separates the two.
 _DEGRADED_TXT_LINE = re.compile(r"^Speaker \(\d{2}:\d{2}:\d{2}\): ")
+# Any turn header, whatever the label ("Speaker A (", "Vadim ("). Labels
+# are user data and may be longer than an arbitrary display limit.
+_TXT_TURN_HEADER = re.compile(r"^.+ \(\d{2}:\d{2}:\d{2}\): ")
 
 
 def _looks_degraded_html(path: Path) -> bool:
@@ -1190,8 +1193,9 @@ def _looks_degraded_html(path: Path) -> bool:
 def _looks_degraded_txt(path: Path) -> bool:
     """True if an existing .speakers.txt carries only generic labels.
 
-    Every content line matches the bare ``Speaker (HH:MM:SS): `` form; a
-    diarized txt has letterized or real-name labels on at least one line.
+    The first content line and every turn header use the bare
+    ``Speaker (HH:MM:SS): `` form; continuation paragraphs have no label.
+    Letterized or real-name turn headers identify transcripts to preserve.
     An empty file has no speaker names to destroy and reads as degraded.
     Unreadable files read as named — when in doubt, keep.
     """
@@ -1202,7 +1206,11 @@ def _looks_degraded_txt(path: Path) -> bool:
     lines = [ln for ln in content.splitlines() if ln.strip()]
     if not lines:
         return True
-    return all(_DEGRADED_TXT_LINE.match(ln) for ln in lines)
+    # Long turns continue in label-less paragraphs, so only turn headers
+    # count — but the file must open with a generic one to be wiz's own.
+    if not _DEGRADED_TXT_LINE.match(lines[0]):
+        return False
+    return all(_DEGRADED_TXT_LINE.match(ln) for ln in lines if _TXT_TURN_HEADER.match(ln))
 
 
 # Provenance line rendered inside degraded (unlabeled) HTML transcripts: a
