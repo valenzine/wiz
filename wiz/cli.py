@@ -178,8 +178,6 @@ def _run_whisper_streaming(cmd: list[str]) -> subprocess.Popen:
     (dimmed timestamp prefix + muted content) and degrades to plain text when
     piped. Returns the Popen object after completion.
     """
-    import time
-
     start = time.monotonic()
     proc = subprocess.Popen(
         cmd,
@@ -195,16 +193,6 @@ def _run_whisper_streaming(cmd: list[str]) -> subprocess.Popen:
             write(line, elapsed)
     proc.wait()
     return proc
-
-
-def _fmt_elapsed(seconds: float) -> str:
-    """Format elapsed seconds as M:SS or H:MM:SS."""
-    total = int(seconds)
-    hours, rem = divmod(total, 3600)
-    minutes, secs = divmod(rem, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
 
 
 _TIMED_STAGES = (
@@ -239,6 +227,7 @@ class _StageTimings:
         self._elapsed: dict[str, float] = {}
         self._started: dict[str, float] = {}
         self._skipped: dict[str, str] = {}
+        self._notes: dict[str, str] = {}
 
     def start(self, stage: str) -> None:
         if stage not in self._started:
@@ -251,8 +240,11 @@ class _StageTimings:
                 time.perf_counter() - started
             )
 
-    def pause(self, stage: str) -> None:
+    def pause(self, stage: str) -> bool:
+        if stage not in self._started:
+            return False
         self.stop(stage)
+        return True
 
     def resume(self, stage: str) -> None:
         self.start(stage)
@@ -273,6 +265,9 @@ class _StageTimings:
         ):
             self._skipped[stage] = reason
 
+    def note(self, stage: str, reason: str) -> None:
+        self._notes[stage] = reason
+
     def render(self, total_wall: float) -> None:
         for stage in tuple(self._started):
             self.stop(stage)
@@ -283,6 +278,8 @@ class _StageTimings:
         for stage in stages:
             if stage in self._elapsed:
                 value = _fmt_stage_duration(self._elapsed[stage])
+                if stage in self._notes:
+                    value += f" ({self._notes[stage]})"
             elif stage in self._skipped:
                 value = f"skipped ({self._skipped[stage]})"
             else:
@@ -290,6 +287,9 @@ class _StageTimings:
             rows.append([stage, value])
         rows.append(["Total (wall)", _fmt_stage_duration(total_wall)])
         ui.table("Stage timing", [("Stage", "left"), ("Time", "right")], rows)
+
+    def has_activity(self) -> bool:
+        return bool(self._elapsed or self._started or self._skipped)
 
 
 # ---------- transcribe ----------
@@ -557,7 +557,12 @@ def _discarded_naming_detail(args: argparse.Namespace) -> str | None:
             "produced); the names were not applied.")
 
 
-def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list[str]:
+def _build_transcribe_args(
+    args: argparse.Namespace,
+    config: cfg.Config,
+    *,
+    timings: _StageTimings | None = None,
+) -> list[str]:
     """Assemble the whisper-cli argv (name kept for history).
 
     NOTE: this helper has outgrown its docstring's original scope — beyond
@@ -622,8 +627,6 @@ def _build_transcribe_args(args: argparse.Namespace, config: cfg.Config) -> list
             raise SystemExit(f"Unknown output format '{o}'. Valid: {', '.join(OUTPUT_FLAGS)}")
 
     whisper_cli = _find_whisper_cli(config.whisper_cli)
-
-    timings: _StageTimings | None = getattr(args, "_stage_timings", None)
 
     # Extract video audio as before. Diarization has a stricter contract than
     # whisper-cli: it always receives 16 kHz mono 16-bit PCM WAV, while plain
@@ -1079,12 +1082,11 @@ def _write_labeled_outputs(
         auto_labels.difference_update(list_map)
     # 3. Interactive prompt overrides/augments when both are given.
     if name_speakers and merged:
-        if timings is not None:
-            timings.pause("Writing outputs / frames")
+        paused = timings.pause("Writing outputs / frames") if timings is not None else False
         try:
             interactive_map = _prompt_speaker_names(merged, default_names=name_map or None)
         finally:
-            if timings is not None:
+            if timings is not None and paused:
                 timings.resume("Writing outputs / frames")
         if interactive_map:
             name_map.update(interactive_map)
@@ -1314,19 +1316,19 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
     try:
         config = cfg.load()
         _apply_diarization_execution_overrides(args, config)
-        args._stage_timings = timings
-        prepared = _build_transcribe_args(args, config)
-        delattr(args, "_stage_timings")
+        prepared = _build_transcribe_args(args, config, timings=timings)
         _cmd, _model, wav, in_path, keep_wav, *_rest = prepared
+        timings.skip(
+            "Audio preparation",
+            "not needed" if wav == in_path else "reused prepared audio",
+        )
         return _cmd_transcribe_prepared(args, config, prepared, timings)
     finally:
-        if hasattr(args, "_stage_timings"):
-            delattr(args, "_stage_timings")
         if wav is not None and in_path is not None and not keep_wav and not args.dry_run:
             _remove_intermediate_audio(wav, in_path)
         if args.dry_run:
             ui.muted("Stage timing unavailable in dry-run (no pipeline work executed).")
-        else:
+        elif timings.has_activity():
             timings.render(time.perf_counter() - wall_started)
 
 
@@ -1334,7 +1336,7 @@ def _cmd_transcribe_prepared(
     args: argparse.Namespace,
     config: cfg.Config,
     prepared: tuple,
-    timings: _StageTimings | None = None,
+    timings: _StageTimings,
 ) -> int:
     cmd, model_path, wav, in_path, _keep_wav, of_base, diarize_enabled, screenshots = prepared
     of_passed = bool(args.output) or (
@@ -1370,8 +1372,6 @@ def _cmd_transcribe_prepared(
         ui.muted("\nDRY-RUN: not executing whisper-cli.")
         return 0
 
-    assert timings is not None
-
     # --- Resumability: skip transcription if a whisper JSON already exists ---
     # --resume lets you re-run `wiz transcribe` to redo diarization + merge
     # (e.g. with a different --speakers count) without re-running whisper-cli.
@@ -1402,7 +1402,6 @@ def _cmd_transcribe_prepared(
         with timings.measure("Transcription"):
             proc = _run_whisper_streaming(cmd)
         rc = proc.returncode
-        timings.skip("Writing outputs / frames", "included in transcription")
 
     # --- Merge diarization with whisper output ---
     written: list[str] = []
@@ -1414,15 +1413,18 @@ def _cmd_transcribe_prepared(
     explicit_html = _outputs_explicitly_include(args, "html")
     want_frames = screenshots and aud.needs_extraction(in_path)
     whisper_segs: list[MR.WhisperSeg] = []
+    whisper_json_problem = False
     if (diarize_enabled or want_frames or want_html) and rc == 0:
         json_path = _find_whisper_json(of_base, wav, of_passed=of_passed)
         if not json_path.exists():
+            whisper_json_problem = True
             ui.status(f"Warning: expected whisper JSON output at {json_path} but it's missing; skipping merge.",
                       kind="warn")
         else:
             try:
                 whisper_segs = MR.parse_whisper_json(json_path)
             except Exception as e:  # noqa: BLE001
+                whisper_json_problem = True
                 ui.status(f"Warning: failed to parse {json_path}: {e}", kind="warn")
                 whisper_segs = []
 
@@ -1576,7 +1578,18 @@ def _cmd_transcribe_prepared(
             )
 
     timings.skip("Speaker profiles", "no speaker labels")
-    timings.skip("Writing outputs / frames", "nothing requested")
+    if rc != 0:
+        timings.skip("Writing outputs / frames", "transcription failed")
+    elif whisper_json_problem:
+        timings.skip("Writing outputs / frames", "whisper JSON unavailable")
+    elif (diarize_enabled or want_frames or want_html) and not whisper_segs:
+        timings.skip("Writing outputs / frames", "no transcript segments")
+    elif diarize_enabled and not diar_segments:
+        timings.skip("Writing outputs / frames", "no speaker labels")
+    elif resuming:
+        timings.skip("Writing outputs / frames", "resumed")
+    else:
+        timings.skip("Writing outputs / frames", "included in transcription")
     ui.summary(written)
 
     # An explicit --speakers request is unfulfilled when no real diarization
@@ -2036,15 +2049,15 @@ def cmd_merge(args: argparse.Namespace) -> int:
     finally:
         for wav, source in cleanup:
             _remove_intermediate_audio(wav, source)
-        timings.render(time.perf_counter() - wall_started)
+        if timings.has_activity():
+            timings.render(time.perf_counter() - wall_started)
 
 
 def _cmd_merge_prepared(
     args: argparse.Namespace,
     cleanup: list[tuple[Path, Path]],
-    timings: _StageTimings | None = None,
+    timings: _StageTimings,
 ) -> int:
-    assert timings is not None
     config = cfg.load()
     _apply_diarization_execution_overrides(args, config)
     in_path = Path(args.file).expanduser()
@@ -2133,6 +2146,10 @@ def _cmd_merge_prepared(
         if normalized_for_diarization:
             cleanup.append((wav, diarization_source))
             ui.kv("Audio", str(wav))
+    timings.skip(
+        "Audio preparation",
+        "not needed" if wav == in_path else "reused prepared audio",
+    )
 
     # Diarization params.
     num_sp = args.speakers if args.speakers else 0
@@ -2377,7 +2394,10 @@ def _cmd_merge_prepared(
         written.extend(str(p) for p in fallback_written)
         kept_outputs.extend(fallback_kept)
     timings.skip("Speaker profiles", "no speaker labels")
-    timings.skip("Writing outputs / frames", "nothing requested")
+    if not diar_segments:
+        timings.skip("Writing outputs / frames", "no speaker labels")
+    elif not written:
+        timings.skip("Writing outputs / frames", "nothing requested")
     ui.summary(written)
     # Generic fallback artifacts and preserved outputs do not fulfill an
     # explicit diarization request. Video-only auto-diarization remains a
@@ -2433,6 +2453,16 @@ def cmd_speakers_forget(args: argparse.Namespace) -> int:
 
 
 def cmd_speakers_match(args: argparse.Namespace) -> int:
+    wall_started = time.perf_counter()
+    timings = _StageTimings()
+    try:
+        return _cmd_speakers_match_prepared(args, timings)
+    finally:
+        if timings.has_activity():
+            timings.render(time.perf_counter() - wall_started)
+
+
+def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTimings) -> int:
     """Show how a recording's clusters match against stored profiles (dry run).
 
     Runs diarization on the given file and prints the cosine-similarity scores
@@ -2454,7 +2484,8 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
         if not wav.exists():
             ui.phase("extracting audio")
             ui.kv("Video", in_path.name)
-            wav = aud.extract_audio(in_path, aud.find_ffmpeg(config.ffmpeg))
+            with timings.measure("Audio preparation"):
+                wav = aud.extract_audio(in_path, aud.find_ffmpeg(config.ffmpeg))
             ui.kv("Audio", str(wav))
     else:
         wav = in_path
@@ -2481,30 +2512,43 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
         ui.phase("normalizing audio")
         if not aud.needs_extraction(in_path):
             ui.kv("Input", in_path.name)
-        wav = aud.prepare_diarization_audio(
-            wav, aud.find_ffmpeg(config.ffmpeg),
-        )
+        with timings.measure("Audio preparation"):
+            wav = aud.prepare_diarization_audio(
+                wav, aud.find_ffmpeg(config.ffmpeg),
+            )
         normalized_for_diarization = wav != diarization_source
         if normalized_for_diarization:
             ui.kv("Audio", str(wav))
+    timings.skip(
+        "Audio preparation",
+        "not needed" if wav == in_path else "reused prepared audio",
+    )
+    timings.skip("Transcription", "not applicable")
+    timings.skip("Writing outputs / frames", "not applicable")
 
     try:
         ui.phase("diarizing")
-        diar_segments = D.run_diarization(
-            wav, config, num_speakers=num_sp, threshold=thr,
-            **_diarization_cache_kwargs(wav, in_path),
-        )
+        with timings.measure("Diarization"):
+            diar_segments = D.run_diarization(
+                wav, config, num_speakers=num_sp, threshold=thr,
+                **_diarization_cache_kwargs(wav, in_path),
+            )
         if not diar_segments:
             raise SystemExit("Diarization produced no segments.")
 
-        profiles = P.load_profiles()
+        with timings.measure("Speaker profiles"):
+            profiles = P.load_profiles()
+            if profiles:
+                cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
+                matches = P.match_speakers(
+                    cluster_embeddings, profiles, threshold=config.speaker_match_threshold,
+                )
         if not profiles:
+            timings.note("Speaker profiles", "no stored profiles")
             ui.info(f"No stored voice profiles in {P.profiles_dir()}; nothing to match against.")
             return 0
 
-        cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
         from wiz.merge import speaker_label
-        matches = P.match_speakers(cluster_embeddings, profiles, threshold=config.speaker_match_threshold)
         rows = []
         for cid, emb in sorted(cluster_embeddings.items()):
             # M3 (wave-1 audit): cosine_similarity returns None when a stored
