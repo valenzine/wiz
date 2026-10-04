@@ -437,7 +437,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     # save must not turn a user's choice into a crash.
     try:
         config.auto_diarization_setup = allowed
-        path = cfg.save(config)
+        path = cfg.save({"auto_diarization_setup": allowed})
         ui.muted(f"Remembered this choice (auto_diarization_setup={str(allowed).lower()}) in {path}")
     except OSError as e:
         ui.status(f"Warning: could not persist the choice to config: {e}", kind="warn")
@@ -1955,7 +1955,7 @@ def _pick_model_interactive(config: cfg.Config, *, prefer_vision: bool) -> str |
             continue
         break
     config.ai_model = chosen
-    cfg.save(config)
+    cfg.save({"ai_model": chosen})
     ui.status(f"Saved ai_model = {chosen}", kind="ok")
     return chosen
 
@@ -2664,7 +2664,7 @@ def cmd_config_show(args: argparse.Namespace) -> int:
 
 def cmd_config_edit(args: argparse.Namespace) -> int:
     config = cfg.load()
-    path = cfg.save(config)
+    path = cfg.save(config.to_dict())
     editor = os.environ.get("EDITOR", "vi")
     subprocess.run([editor, str(path)])
     return 0
@@ -2715,7 +2715,7 @@ def _validate_config_value(key: str, value: object) -> None:
 
 
 def cmd_config_set(args: argparse.Namespace) -> int:
-    config = cfg.load()
+    cfg.load()
     assignment = args.assignment
     if "=" not in assignment:
         raise SystemExit("Expected KEY=VALUE (e.g. wiz config set threads=8)")
@@ -2726,8 +2726,7 @@ def cmd_config_set(args: argparse.Namespace) -> int:
     field_type = cfg.Config.__dataclass_fields__[key].type
     coerced = _coerce(value.strip(), field_type)
     _validate_config_value(key, coerced)
-    setattr(config, key, coerced)
-    path = cfg.save(config)
+    path = cfg.save({key: coerced})
     print(f"Set {key} = {coerced!r}")
     print(f"Saved to {path}")
     return 0

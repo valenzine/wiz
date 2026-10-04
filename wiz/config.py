@@ -275,12 +275,12 @@ def validate_diarization_execution_settings(config: Config) -> None:
         )
 
 
-def save(cfg: Config) -> Path:
-    """Write config to disk, preserving keys this version does not know about.
+def save(changes: dict[str, Any]) -> Path:
+    """Apply explicit configuration changes while preserving unknown keys.
 
-    Read-modify-write rather than a plain overwrite. ``load()`` already filters
-    to known dataclass fields, so a naive ``write_text(_emit_toml(cfg.to_dict()))``
-    silently deletes every key the running build has never heard of.
+    Read-modify-write rather than a plain overwrite. Callers pass only values
+    they intend to persist; this keeps command-line overrides and untouched
+    defaults out of the user config.
 
     That is not hypothetical. The config file is shared by several writers that
     do not agree on the schema: older installs left their own keys, feature
@@ -299,10 +299,9 @@ def save(cfg: Config) -> Path:
             # An unreadable file should not block saving; fall back to a
             # clean write rather than refusing to persist the change.
             merged = {}
-    # Skip fields the in-memory config never answered (None): they must not
-    # clobber a value a previous session persisted (a fresh Config() has
-    # auto_diarization_setup=None even when the file says true).
-    updates = {k: v for k, v in cfg.to_dict().items() if v is not None}
+    # None means "leave the existing value alone", so an unanswered tri-state
+    # field cannot clobber a value persisted by a prior session.
+    updates = {k: v for k, v in changes.items() if v is not None}
     merged.update(updates)
 
     CONFIG_PATH.write_text(_emit_toml(merged), encoding="utf-8")
