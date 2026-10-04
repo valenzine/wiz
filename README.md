@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.17.1-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.18.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -128,7 +128,7 @@ wiz models download turbo      # ggml-large-v3-turbo.bin — unquantized (NS-15)
 - **Screenshots** — capture one on-screen frame per segment into a manifest + HTML transcript. Auto-on for video inputs.
 - **HTML transcript** — a self-contained, color-coded, frame-illustrated `.speakers.html` you can open in any browser (no server, no external images).
 - **AI analysis** — send a transcript (and optionally frames) to an OpenAI-compatible chat model ([Ollama](https://ollama.com) by default) for summaries, action items, implementation plans, or freeform questions. Every analysis also appends a dense `## Essentials` section.
-- **Re-tune cheaply** — `wiz merge` re-runs only diarization + merge against an existing transcription, reusing a cached diarization result, so adjusting speaker count / threshold / names is instant.
+- **Re-tune without retranscribing** — `wiz merge` reuses the existing transcription. Unchanged diarization settings can reuse the cache; changing speaker count or threshold runs diarization again.
 
 ## Terminal output
 
@@ -174,6 +174,24 @@ Speakers  4 detected
 │   · recording.speakers.html
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+I get a compact stage timing table at the end of `transcribe` and `merge`.
+I can compare audio preparation, transcription, diarization, speaker profiles,
+and output writing (including frames), with skipped stages identified explicitly.
+Chained `--analyze` has its own row when it runs. Durations retain fractions of
+a second so short stages remain useful for comparisons.
+
+Whisper's own output files are included in transcription time; the writing row
+measures wiz's labeled transcripts, HTML, and frames.
+
+`Total (wall)` measures the entire command, including setup, interactive prompts,
+cleanup, and chained analysis. The processing rows exclude time spent waiting for
+speaker names, so their sum can be smaller than the total. A dry run does not
+report execution durations. Errors detected before processing starts do not print
+an empty table; failures during a stage still show the time spent so far.
+
+`speakers match` also reports its audio preparation, diarization, profile matching,
+and total time.
 
 ## Recipes
 
@@ -221,7 +239,7 @@ Exit codes: if I explicitly pass `--speakers` and diarization produces no real s
 
 ### `wiz merge <file>`
 
-Re-run only diarization + the merge against an existing whisper JSON, skipping the expensive transcription. Lets you tune speaker count / threshold / names cheaply after a first run. Diarization results are cached next to the media (`<file>.wav.diar.json` for video, `<file>.diar.json` for audio such as `recording.mp3.diar.json`), so a second `wiz merge` with the same `--speakers`/`--cluster-threshold`/`--diarization-window-shift` reuses the cache and skips the embedding pass — only the cheap merge step runs. Changing any of them re-runs diarization and overwrites the cache. Provider and thread count don't affect the result, so changing them still reuses the cache.
+Re-run only diarization + the merge against an existing whisper JSON, skipping the expensive transcription. Lets you tune speaker count / threshold / names without transcribing again. Diarization results are cached next to the media (`<file>.wav.diar.json` for video, `<file>.diar.json` for audio such as `recording.mp3.diar.json`), so a second `wiz merge` with the same input and `--speakers`/`--cluster-threshold`/`--diarization-window-shift` reuses the cache and skips diarization. Voice-profile embeddings and matching still run unless I pass `--no-voice-profiles`. Changing any of those diarization settings re-runs diarization and overwrites the cache. Provider and thread count don't affect the cache key, so changing them still reuses the cache.
 
 ```bash
 wiz merge --speakers 4 recording.mov

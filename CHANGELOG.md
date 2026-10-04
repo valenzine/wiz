@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.18.0] - 2026-10-04
+
+### Added
+
+- I now get a compact timing summary at the end of `transcribe` and `merge`:
+  audio preparation, transcription, diarization, speaker profiles, output
+  writing, and total elapsed time. It replaces the separate diarization and
+  embedding completion times so I can compare runs and spot slow stages.
+- I also keep timing information in `speakers match`. Skipped stages explain why
+  they did not run, and an error before processing starts does not print an empty
+  timing table.
+
 ## [0.17.1] - 2026-09-27
 
 ### Fixed

@@ -151,7 +151,7 @@ def test_cli_overrides_persistent_execution_settings(tmp_path, monkeypatch, comm
         raise Captured
 
     if command == "transcribe":
-        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config: capture(config))
+        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config, *, timings=None: capture(config))
     else:
         monkeypatch.setattr(cli, "_ensure_diarization_ready", capture)
     with pytest.raises(Captured):
@@ -177,7 +177,7 @@ def test_cli_uses_persistent_execution_settings_without_overrides(tmp_path, monk
         raise Captured
 
     if command == "transcribe":
-        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config: capture(config))
+        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config, *, timings=None: capture(config))
     else:
         monkeypatch.setattr(cli, "_ensure_diarization_ready", capture)
     with pytest.raises(Captured):
@@ -413,7 +413,7 @@ def test_cli_window_shift_overrides_config(tmp_path, monkeypatch, command, cli_v
         raise Captured
 
     if command == "transcribe":
-        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config: capture(config))
+        monkeypatch.setattr(cli, "_build_transcribe_args", lambda _args, config, *, timings=None: capture(config))
     else:
         monkeypatch.setattr(cli, "_ensure_diarization_ready", capture)
     with pytest.raises(Captured):

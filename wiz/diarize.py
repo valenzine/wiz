@@ -13,7 +13,6 @@ import json
 import shutil
 import sys
 import tarfile
-import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -420,7 +419,6 @@ def run_diarization(
             "sherpa-onnx diarization config validation failed; check model paths."
         )
 
-    started = time.monotonic()
     try:
         sd = sherpa_onnx.OfflineSpeakerDiarization(sd_cfg)
     except Exception as e:
@@ -452,11 +450,9 @@ def run_diarization(
                 f"{config.diarization_provider!r}: {e}"
             ) from e
         raise
-    elapsed = int(time.monotonic() - started)
     segments = [
         DiarSegment(start=r.start, end=r.end, speaker=r.speaker) for r in result
     ]
-    ui.muted(f"Speaker diarization completed in {elapsed // 60}:{elapsed % 60:02d}.")
     ui.muted(f"Diarization found {len(segments)} segments.")
     cache_path = _write_diarization_cache(
         cache_input, segments, num_speakers, threshold,
