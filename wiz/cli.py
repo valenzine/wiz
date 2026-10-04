@@ -822,14 +822,14 @@ def _find_whisper_json(of_base: Path, wav: Path, of_passed: bool) -> Path | None
     return candidates[0]
 
 
-def _apply_speaker_names_list(
+def _speaker_names_from_list(
     merged: list[tuple[MR.WhisperSeg, str]],
     names: list[str],
-) -> tuple[list[tuple[MR.WhisperSeg, str]], dict[str, str]]:
-    """Assign names to speakers by total talk time (most talkative first).
+) -> dict[str, str]:
+    """Build a label-to-name map by total talk time (most talkative first).
 
-    Returns the relabeled merged list and the {label: name} map used. Speakers
-    beyond the provided names keep their default ``Speaker X`` label.
+    Leave input segments and labels unchanged. Speakers beyond the provided
+    names are omitted from the map; extra names are ignored.
     ``names`` may be a single comma-separated token (``["Alice,Bob"]``) or
     multiple tokens; both are flattened into a flat name list.
     """
@@ -841,7 +841,7 @@ def _apply_speaker_names_list(
     for i, label in enumerate(order):
         if i < len(flat):
             name_map[label] = flat[i]
-    return MR.relabel(merged, name_map), name_map
+    return name_map
 
 
 def _prompt_speaker_names(
@@ -1119,8 +1119,7 @@ def _write_labeled_outputs(
             ui.muted(f"  {lbl} -> {nm}")
     # 2. Non-interactive --speakers-names override profile matches.
     if speakers_names and merged:
-        # Keep cluster labels until final relabeling so prompts and profiles share keys.
-        _, list_map = _apply_speaker_names_list(merged, speakers_names)
+        list_map = _speaker_names_from_list(merged, speakers_names)
         name_map.update(list_map)
         auto_labels.difference_update(list_map)
     # 3. Interactive prompt overrides/augments when both are given.
