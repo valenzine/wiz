@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.19.0] - 2026-10-04
+
+### Changed
+
+- Group consecutive same-speaker fragments into readable HTML turns with one start timestamp per turn. Break long TXT and HTML turns into paragraphs at existing sentence boundaries, preserving transcript wording and punctuation.
+- Keep each turn's screenshots attached to their original segments and collapse multiple frames into an expandable gallery.
+
+### Fixed
+
+- Enable transcript search on HTML exports without screenshots.
+
 ## [0.18.2] - 2026-10-04
 
 ### Fixed
