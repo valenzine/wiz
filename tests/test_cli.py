@@ -2825,6 +2825,64 @@ def test_write_labeled_outputs_prompt_confirmation_upgrades_auto_label(tmp_path,
     assert data["source"] == "user"  # provenance upgraded from 'auto'
 
 
+@pytest.mark.parametrize(
+    "listed_names,answers,expected_names",
+    [
+        ("Alice,Bob", ["Alicia", ""], ["Alicia", "Bob"]),
+        ("Alice,Alice", ["Alicia", ""], ["Alicia", "Alice"]),
+        ("Alice,Alice", ["", ""], ["Alice", "Alice"]),
+        ("Alice,Bob", ["Bob", "Alice"], ["Bob", "Alice"]),
+    ],
+)
+def test_combined_speaker_naming_preserves_cluster_identity_for_profile_saves(
+    tmp_path, monkeypatch, listed_names, answers, expected_names,
+):
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    for name in ("Alice", "Bob"):
+        cli.P.save_profile(name, [0.0, 0.0], samples=2, auto_match=True)
+    before = {path.stem: path.read_bytes() for path in cli.P.profiles_dir().glob("*.json")}
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=4.0, text="first voice"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=4.0, end=6.0, text="second voice"), "Speaker B"),
+    ]
+    prompts = []
+    responses = iter(answers)
+
+    def respond(prompt):
+        prompts.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr(builtins, "input", respond)
+    embeddings = {0: [3.0, 0.0], 1: [0.0, 3.0]}
+    srt, txt, html, name_map = cli._write_labeled_outputs(
+        merged, tmp_path / "recording", name_speakers=True,
+        speakers_names=[listed_names], html=True,
+        cluster_embeddings=embeddings, save_profiles=True,
+    )
+
+    defaults = listed_names.split(",")
+    assert prompts == [f"Name for Speaker {label} [{name}]: " for label, name in zip("AB", defaults)]
+    assert name_map == dict(zip(["Speaker A", "Speaker B"], expected_names))
+    assert [line.split(": ", 1)[0] for line in srt.read_text().splitlines() if ": " in line] == expected_names
+    # Dialogue TXT combines consecutive cues belonging to the same speaker.
+    turn_names = [name for index, name in enumerate(expected_names) if not index or name != expected_names[index - 1]]
+    assert [line.split(" (", 1)[0] for line in txt.read_text().splitlines() if line] == turn_names
+    assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html.read_text()) == expected_names
+    for output in (srt, txt, html):
+        assert "first voice" in output.read_text()
+        assert "second voice" in output.read_text()
+    for name in set(expected_names):
+        data = json.loads((cli.P.profiles_dir() / f"{name}.json").read_text())
+        selected_cluster = expected_names.index(name)  # A has the most talk time.
+        expected_samples = 3 if name in before else 1
+        assert data["name"] == name
+        assert data["samples"] == expected_samples
+        assert data["source"] == "user"
+        assert data["embedding"] == [value / expected_samples for value in embeddings[selected_cluster]]
+    for name in before.keys() - set(expected_names):
+        assert (cli.P.profiles_dir() / f"{name}.json").read_bytes() == before[name]
+
+
 def test_write_labeled_outputs_saves_duplicate_confirmed_name_once_from_longest_cluster(
     tmp_path, monkeypatch,
 ):

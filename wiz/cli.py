@@ -1119,7 +1119,8 @@ def _write_labeled_outputs(
             ui.muted(f"  {lbl} -> {nm}")
     # 2. Non-interactive --speakers-names override profile matches.
     if speakers_names and merged:
-        merged, list_map = _apply_speaker_names_list(merged, speakers_names)
+        # Keep cluster labels until final relabeling so prompts and profiles share keys.
+        _, list_map = _apply_speaker_names_list(merged, speakers_names)
         name_map.update(list_map)
         auto_labels.difference_update(list_map)
     # 3. Interactive prompt overrides/augments when both are given.
