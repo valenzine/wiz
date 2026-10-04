@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.18.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.18.1-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
@@ -463,7 +463,7 @@ When diarization is on, whisper-cli VAD is disabled (sherpa-onnx handles speech 
 There are two ways to name speakers:
 
 - **Interactive** — pass `--name-speakers` and, after transcription + diarization, wiz shows one representative quote per detected speaker (the longest utterance — most identifying) and prompts for a real name. Blank input keeps the default `Speaker A` label.
-- **Non-interactive** — pass `--speakers-names Alice,Bob,Carol,Dave` to name speakers in a single command. Names are assigned to speakers ordered by total speaking time (most talkative gets the first name). Extra names beyond the detected speaker count are ignored; speakers beyond the provided names keep their `Speaker A/B/C` labels.
+- **Non-interactive** — pass `--speakers-names Alice,Bob,Carol,Dave` to name detected clusters in a single command. Names are assigned by total speaking time (most talkative cluster gets the first name) and override voice-profile suggestions. If one person spans several clusters, repeat that name for each cluster or use `--name-speakers` to name them individually. Extra names beyond the cluster count are ignored; clusters beyond the provided names retain their profile matches or generic `Speaker A/B/C` labels.
 
 Both can be combined: `--speakers-names` provides defaults that are shown in the `--name-speakers` prompt, so you can confirm or override each one. Real names replace the `Speaker A/B/C` labels in both `*.speakers.srt` and `*.speakers.txt`.
 
@@ -493,7 +493,11 @@ wiz merge recording.mov --speakers-names Alice,Bob,Carol,Dave
 <img src="docs/assets/wiz-voices.svg" alt="Name Speaker B as Bob once, and the next recording with the same people is labeled automatically, with no flags." width="100%">
 
 
-When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match exceeds `speaker_match_threshold` (default `0.8`).
+When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match is at or above `speaker_match_threshold` (default `0.8`).
+
+If diarization splits one person's voice into several clusters, wiz matches each cluster independently to the same stored profile. Each cluster takes its best compatible match at or above the threshold; weaker matches keep their generic speaker labels. Automatic matches leave existing profiles unchanged; only confirmed names merge new samples into them.
+
+Matches are similarity estimates. Use `--name-speakers` to confirm or correct the suggested names. When several fragments are confirmed with the same name, wiz saves one sample for that name, using the confirmed fragment with the most transcript talk time. Unconfirmed fragments do not contribute to that sample.
 
 Profiles live at `~/.config/wiz/speakers/<Name>.json` (one file per name, inspectable and easy to delete). wiz saves a profile automatically whenever a speaker receives a real name — so the first time you transcribe a meeting with `--speakers-names Alice,Bob,Carol,Dave`, those four voice profiles are stored; the next recording with the same people is labeled automatically, no flags needed.
 

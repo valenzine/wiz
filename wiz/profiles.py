@@ -5,7 +5,7 @@ wiz can save a *voice profile*: a fixed-size embedding vector for that
 speaker cluster, computed with the same sherpa-onnx embedding extractor used
 for diarization. On later recordings, each detected cluster's embedding is
 compared (cosine similarity) to the stored profiles, and a name is
-auto-assigned when the best match exceeds ``speaker_match_threshold``
+auto-assigned when the best match is at or above ``speaker_match_threshold``
 (config, default 0.8).
 
 Profiles live at ``~/.config/wiz/speakers/<Name>.json``::
@@ -356,27 +356,31 @@ def match_speakers(
     profiles: list[Profile] | None = None,
     threshold: float = 0.8,
 ) -> dict[int, tuple[str, float] | None]:
-    """Match each cluster to the best stored profile above ``threshold``.
+    """Match each cluster to the best stored profile at or above ``threshold``.
 
     Returns ``{cluster_id: (name, score) | None}``. A cluster maps to ``None``
-    when no profile reaches the threshold (i.e. an unknown speaker). Ties are
-    broken by higher score; the same profile is never assigned to two clusters
-    — each name is claimed by its single best-scoring cluster.
+    when no profile reaches the threshold (i.e. an unknown speaker). Equal
+    scores select the lexicographically highest name. Each cluster is matched
+    independently, so the same profile may match multiple clusters.
     """
     profiles = profiles if profiles is not None else load_profiles()
     if not profiles or not cluster_embeddings:
         return {cid: None for cid in cluster_embeddings}
 
-    # Score every (cluster, profile) pair.
-    scored: list[tuple[float, int, str]] = []
+    matched: dict[int, tuple[str, float] | None] = {cid: None for cid in cluster_embeddings}
     dim_skips = 0
     for cid, cemb in cluster_embeddings.items():
+        best: tuple[float, str] | None = None
         for prof in profiles:
             score = cosine_similarity(cemb, prof.embedding)
             if score is None:
                 dim_skips += 1
                 continue
-            scored.append((score, cid, prof.name))
+            candidate = (score, prof.name)
+            if best is None or candidate > best:
+                best = candidate
+        if best is not None and best[0] >= threshold:
+            matched[cid] = (best[1], best[0])
     if dim_skips:
         print(
             f"Warning: {dim_skips} cluster/profile pair(s) skipped — embedding "
@@ -384,19 +388,6 @@ def match_speakers(
             "model is not comparable; re-create it under the current model).",
             file=sys.stderr,
         )
-    scored.sort(reverse=True)
-
-    matched: dict[int, tuple[str, float] | None] = {cid: None for cid in cluster_embeddings}
-    used_names: set[str] = set()
-    used_clusters: set[int] = set()
-    for score, cid, name in scored:
-        if score < threshold:
-            break
-        if cid in used_clusters or name in used_names:
-            continue
-        matched[cid] = (name, score)
-        used_clusters.add(cid)
-        used_names.add(name)
     return matched
 
 
@@ -407,7 +398,7 @@ def auto_assign_names(
 ) -> tuple[dict[str, str], dict[int, tuple[str, float] | None]]:
     """Build a {speaker_label: name} map from profile matches.
 
-    Only speakers whose match score exceeds ``threshold`` are named; others
+    Only speakers whose match score is at or above ``threshold`` are named; others
     are left as ``Speaker X`` for the interactive prompt or
     ``--speakers-names`` to fill in. Returns the name map keyed by
     ``Speaker A/B/...`` labels and the raw per-cluster match info.

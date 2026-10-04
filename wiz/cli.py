@@ -822,14 +822,14 @@ def _find_whisper_json(of_base: Path, wav: Path, of_passed: bool) -> Path | None
     return candidates[0]
 
 
-def _apply_speaker_names_list(
+def _speaker_names_from_list(
     merged: list[tuple[MR.WhisperSeg, str]],
     names: list[str],
-) -> tuple[list[tuple[MR.WhisperSeg, str]], dict[str, str]]:
-    """Assign names to speakers by total talk time (most talkative first).
+) -> dict[str, str]:
+    """Build a label-to-name map by total talk time (most talkative first).
 
-    Returns the relabeled merged list and the {label: name} map used. Speakers
-    beyond the provided names keep their default ``Speaker X`` label.
+    Leave input segments and labels unchanged. Speakers beyond the provided
+    names are omitted from the map; extra names are ignored.
     ``names`` may be a single comma-separated token (``["Alice,Bob"]``) or
     multiple tokens; both are flattened into a flat name list.
     """
@@ -841,7 +841,7 @@ def _apply_speaker_names_list(
     for i, label in enumerate(order):
         if i < len(flat):
             name_map[label] = flat[i]
-    return MR.relabel(merged, name_map), name_map
+    return name_map
 
 
 def _prompt_speaker_names(
@@ -960,8 +960,10 @@ def _save_named_profiles(
     name_map: dict[str, str],
     cluster_embeddings: dict[int, list[float]],
     auto_labels: set[str] | None = None,
+    *,
+    label_order: list[str],
 ) -> None:
-    """Save (or merge) a voice profile for each speaker that received a real name.
+    """Save (or merge) one voice profile per storage target from this run.
 
     ``name_map`` is keyed by ``Speaker A/B/...`` labels; we map those back to
     cluster ids via the merge module's letter ordering and persist the
@@ -978,6 +980,13 @@ def _save_named_profiles(
     chain of self-confirming matches used to silently drift the stored
     centroid. When the guard keeps an existing profile, the run SAYS so
     instead of reporting a merge that never happened.
+
+    ``label_order`` is required and must be the original transcript labels
+    ordered by total Whisper transcript talk time, with first appearance as
+    its tie-breaker. It is captured before any output relabeling. If several
+    labels resolve to one profile storage target, human-confirmed labels win;
+    the first eligible label in this order supplies the one embedding.
+    Diarization clusters without any assigned transcript cue are not saved.
     """
     from wiz.merge import _SPEAKER_LETTERS
 
@@ -985,8 +994,8 @@ def _save_named_profiles(
         f"Speaker {letter}": i for i, letter in enumerate(_SPEAKER_LETTERS)
     }
     auto_labels = auto_labels or set()
-    saved = 0
-    merged_count = 0
+    label_rank = {label: i for i, label in enumerate(label_order)}
+    candidates: list[tuple[str, int, str, bool]] = []
     for label, name in name_map.items():
         cid = label_to_cid.get(label)
         if cid is None or cid not in cluster_embeddings:
@@ -994,10 +1003,39 @@ def _save_named_profiles(
         # Don't save a profile whose "name" is just the default Speaker label.
         if not name or name.startswith("Speaker "):
             continue
-        is_auto = label in auto_labels
+        # A diarization cluster may have no assigned Whisper cue, so it has
+        # no transcript talk time and is not a candidate for this save.
+        if label not in label_rank:
+            continue
+        candidates.append((label, cid, name, label in auto_labels))
+
+    def _same_storage_target(path: Path, claimed: Path) -> bool:
+        if path == claimed:
+            return True
         try:
-            existed = P._profile_path(name).exists()
+            return path.samefile(claimed)
+        except OSError:
+            # On a case-sensitive volume distinct case aliases must remain
+            # distinct profiles. A missing/unreadable path is therefore not a
+            # collision; a later successful save will establish its identity.
+            return False
+
+    saved = 0
+    merged_count = 0
+    claimed_paths: list[Path] = []
+    for label, cid, name, is_auto in sorted(
+        candidates,
+        key=lambda item: (item[3], label_rank[item[0]], item[0]),
+    ):
+        target = P._profile_path(name)
+        if any(_same_storage_target(target, claimed) for claimed in claimed_paths):
+            continue
+        try:
+            existed = target.exists()
             path = P.save_profile(name, cluster_embeddings[cid], samples=1, auto_match=is_auto)
+            # Record even an auto keep. This also makes a new case alias on
+            # case-insensitive filesystems collide after its first save.
+            claimed_paths.append(path)
             if is_auto and existed:
                 # save_profile's no-clobber guard kept the existing file —
                 # announce the keep, not a merge that did not happen.
@@ -1062,6 +1100,7 @@ def _write_labeled_outputs(
     normally.
     """
     name_map: dict[str, str] = {}
+    profile_save_order = MR.speakers_by_talk_time(merged)
     # Labels whose name arrived via profile auto-match (M3, wave-1): tracked
     # so profile saving can flag those saves as machine-sourced. Any later
     # HUMAN source that writes the label — --speakers-names, the interactive
@@ -1072,12 +1111,15 @@ def _write_labeled_outputs(
     if profile_names and merged:
         name_map.update(profile_names)
         auto_labels.update(profile_names)
-        ui.info(f"Auto-matched {len(profile_names)} speaker(s) from voice profiles.")
+        ui.info(
+            f"Auto-matched {len(profile_names)} cluster(s) to "
+            f"{len(set(profile_names.values()))} distinct profile name(s) from voice profiles."
+        )
         for lbl, nm in profile_names.items():
             ui.muted(f"  {lbl} -> {nm}")
     # 2. Non-interactive --speakers-names override profile matches.
     if speakers_names and merged:
-        merged, list_map = _apply_speaker_names_list(merged, speakers_names)
+        list_map = _speaker_names_from_list(merged, speakers_names)
         name_map.update(list_map)
         auto_labels.difference_update(list_map)
     # 3. Interactive prompt overrides/augments when both are given.
@@ -1112,7 +1154,12 @@ def _write_labeled_outputs(
         )
     # Save voice profiles for speakers that received a real name.
     if save_profiles and cluster_embeddings and name_map:
-        _save_named_profiles(name_map, cluster_embeddings, auto_labels=auto_labels)
+        _save_named_profiles(
+            name_map,
+            cluster_embeddings,
+            auto_labels=auto_labels,
+            label_order=profile_save_order,
+        )
     return srt_out, txt_out, html_out, name_map
 
 
