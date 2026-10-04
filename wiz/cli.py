@@ -1168,6 +1168,8 @@ def _write_labeled_outputs(
 # letterized ("Speaker A (") or real-name ("Vadim (") labels on at least one
 # line, so all-lines-match cleanly separates the two.
 _DEGRADED_TXT_LINE = re.compile(r"^Speaker \(\d{2}:\d{2}:\d{2}\): ")
+# Any turn header, whatever the label ("Speaker A (", "Vadim (").
+_TXT_TURN_HEADER = re.compile(r"^.{1,80}? \(\d{2}:\d{2}:\d{2}\): ")
 
 
 def _looks_degraded_html(path: Path) -> bool:
@@ -1202,7 +1204,11 @@ def _looks_degraded_txt(path: Path) -> bool:
     lines = [ln for ln in content.splitlines() if ln.strip()]
     if not lines:
         return True
-    return all(_DEGRADED_TXT_LINE.match(ln) for ln in lines)
+    # Long turns continue in label-less paragraphs, so only turn headers
+    # count — but the file must open with a generic one to be wiz's own.
+    if not _DEGRADED_TXT_LINE.match(lines[0]):
+        return False
+    return all(_DEGRADED_TXT_LINE.match(ln) for ln in lines if _TXT_TURN_HEADER.match(ln))
 
 
 # Provenance line rendered inside degraded (unlabeled) HTML transcripts: a

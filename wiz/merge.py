@@ -232,13 +232,13 @@ def _turn_paragraphs(segments: list[tuple[int, WhisperSeg]]) -> list[str]:
     start = 0
     for boundary in re.finditer(r"[.!?…][\"'”’»)\]]*(?=\s|$)", text):
         end = boundary.end()
-        if end - start >= 600:
+        # A lowercase continuation ("... and", "e.g. the") is not a new sentence.
+        if end - start >= 600 and not text[end:].lstrip()[:1].islower():
             paragraphs.append(text[start:end].strip())
             start = end
     if text[start:].strip():
         paragraphs.append(text[start:].strip())
     return paragraphs
-
 
 
 def format_dialogue_txt(merged: list[tuple[WhisperSeg, str]]) -> str:
@@ -386,11 +386,12 @@ main { max-width: 920px; margin: 0 auto; padding: 1em; }
 .cue .text { font-size: .95em; white-space: normal; word-wrap: break-word; }
 .cue .text p { margin: 0 0 .8em; }
 .cue .text p:last-child { margin-bottom: 0; }
+.cue .body > .frame { display: inline-block; margin-top: .6em; }
 .cue .frames { margin-top: .6em; }
 .cue .frames summary { color: var(--muted); cursor: pointer; }
 .cue .gallery { display: flex; flex-wrap: wrap; gap: .5em; margin-top: .4em; }
 .cue.hidden { display: none; }
-footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding: 1.5em; }
+.foot { text-align: center; color: var(--muted); font-size: .8em; padding: 1.5em; }
 /* Lightbox */
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.86); z-index: 100;
   display: none; align-items: center; justify-content: center; padding: 2em; }
@@ -425,7 +426,9 @@ footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding:
     search.addEventListener('input', function () {
       var q = search.value.trim().toLowerCase();
       document.querySelectorAll('.cue').forEach(function (cue) {
-        var hay = (cue.textContent || '').toLowerCase();
+        var hay = Array.prototype.map.call(cue.querySelectorAll('.speaker, .text p'), function (el) {
+          return el.textContent;
+        }).join(' ').toLowerCase();
         cue.classList.toggle('hidden', q && hay.indexOf(q) === -1);
       });
     });

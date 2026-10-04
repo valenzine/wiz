@@ -3221,3 +3221,26 @@ def test_upgrade_reinjects_the_diarize_requirement_into_the_pipx_package(monkeyp
     assert cli.cmd_upgrade(argparse.Namespace()) == 0
     assert calls[0] == ["pipx", "install", "--force", cli._INSTALL_SOURCE]
     assert calls[1] == ["pipx", "inject", "--force", "transcript-wiz", cli.D.DIARIZE_REQUIREMENT]
+
+
+def test_looks_degraded_txt_accepts_multi_paragraph_generic_turn(tmp_path):
+    """A long generic-label turn continues in label-less paragraphs."""
+    from wiz import merge as MR
+
+    sentence = "This is a sentence that goes on for a while and ends."
+    merged = [(MR.WhisperSeg(i, i + 1, sentence), "Speaker") for i in range(30)]
+    degraded = tmp_path / "degraded.speakers.txt"
+    degraded.write_text(MR.format_dialogue_txt(merged) + "\n", encoding="utf-8")
+    assert "\n\n" in degraded.read_text(encoding="utf-8")
+    assert cli._looks_degraded_txt(degraded)
+
+    named = tmp_path / "named.speakers.txt"
+    named.write_text(
+        MR.format_dialogue_txt(merged + [(MR.WhisperSeg(30, 31, "Reply."), "Vadim")]) + "\n",
+        encoding="utf-8",
+    )
+    assert not cli._looks_degraded_txt(named)
+
+    foreign = tmp_path / "foreign.speakers.txt"
+    foreign.write_text("Some notes\n\nSpeaker (00:00:01): hi\n", encoding="utf-8")
+    assert not cli._looks_degraded_txt(foreign)

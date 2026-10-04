@@ -387,3 +387,11 @@ def test_short_sentence_before_long_unfinished_text_does_not_force_a_break():
     merged = [(_seg(0, 60, text), 'Alice')]
     assert MR.format_dialogue_txt(merged) == 'Alice (00:00:00): ' + text.strip()
     assert MR.format_speakers_html(merged).count('<p>') == 1
+
+
+def test_long_turn_does_not_break_before_lowercase_continuation():
+    text = ('word ' * 125).strip() + '... and then more. Next sentence.'
+    merged = [(_seg(0, 60, text), 'Alice')]
+    assert MR.format_dialogue_txt(merged) == (
+        'Alice (00:00:00): ' + text[: -len(' Next sentence.')] + '\n\nNext sentence.'
+    )
