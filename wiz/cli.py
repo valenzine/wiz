@@ -960,9 +960,10 @@ def _save_named_profiles(
     name_map: dict[str, str],
     cluster_embeddings: dict[int, list[float]],
     auto_labels: set[str] | None = None,
-    label_order: list[str] | None = None,
+    *,
+    label_order: list[str],
 ) -> None:
-    """Save (or merge) one voice profile per real name from this run.
+    """Save (or merge) one voice profile per storage target from this run.
 
     ``name_map`` is keyed by ``Speaker A/B/...`` labels; we map those back to
     cluster ids via the merge module's letter ordering and persist the
@@ -979,6 +980,13 @@ def _save_named_profiles(
     chain of self-confirming matches used to silently drift the stored
     centroid. When the guard keeps an existing profile, the run SAYS so
     instead of reporting a merge that never happened.
+
+    ``label_order`` is required and must be the original transcript labels
+    ordered by total Whisper transcript talk time, with first appearance as
+    its tie-breaker. It is captured before any output relabeling. If several
+    labels resolve to one profile storage target, human-confirmed labels win;
+    the first eligible label in this order supplies the one embedding.
+    Diarization clusters without any assigned transcript cue are not saved.
     """
     from wiz.merge import _SPEAKER_LETTERS
 
@@ -986,10 +994,8 @@ def _save_named_profiles(
         f"Speaker {letter}": i for i, letter in enumerate(_SPEAKER_LETTERS)
     }
     auto_labels = auto_labels or set()
-    # The order is calculated from the original diarization labels, before
-    # relabeling turns multiple clusters into the same visible name.
-    label_rank = {label: i for i, label in enumerate(label_order or [])}
-    candidates: dict[str, list[tuple[str, int, bool]]] = {}
+    label_rank = {label: i for i, label in enumerate(label_order)}
+    candidates: list[tuple[str, int, str, bool]] = []
     for label, name in name_map.items():
         cid = label_to_cid.get(label)
         if cid is None or cid not in cluster_embeddings:
@@ -997,23 +1003,39 @@ def _save_named_profiles(
         # Don't save a profile whose "name" is just the default Speaker label.
         if not name or name.startswith("Speaker "):
             continue
-        candidates.setdefault(name, []).append((label, cid, label in auto_labels))
+        # A diarization cluster may have no assigned Whisper cue, so it has
+        # no transcript talk time and is not a candidate for this save.
+        if label not in label_rank:
+            continue
+        candidates.append((label, cid, name, label in auto_labels))
+
+    def _same_storage_target(path: Path, claimed: Path) -> bool:
+        if path == claimed:
+            return True
+        try:
+            return path.samefile(claimed)
+        except OSError:
+            # On a case-sensitive volume distinct case aliases must remain
+            # distinct profiles. A missing/unreadable path is therefore not a
+            # collision; a later successful save will establish its identity.
+            return False
 
     saved = 0
     merged_count = 0
-    for name, named_candidates in candidates.items():
-        # A human confirmation supersedes any automatic match for the same
-        # name. Within the selected provenance, retain the longest-talking
-        # cluster (the first tie is the original order of appearance).
-        confirmed = [item for item in named_candidates if not item[2]]
-        eligible = confirmed or named_candidates
-        label, cid, is_auto = min(
-            eligible,
-            key=lambda item: (label_rank.get(item[0], len(label_rank)), item[0]),
-        )
+    claimed_paths: list[Path] = []
+    for label, cid, name, is_auto in sorted(
+        candidates,
+        key=lambda item: (item[3], label_rank[item[0]], item[0]),
+    ):
+        target = P._profile_path(name)
+        if any(_same_storage_target(target, claimed) for claimed in claimed_paths):
+            continue
         try:
-            existed = P._profile_path(name).exists()
+            existed = target.exists()
             path = P.save_profile(name, cluster_embeddings[cid], samples=1, auto_match=is_auto)
+            # Record even an auto keep. This also makes a new case alias on
+            # case-insensitive filesystems collide after its first save.
+            claimed_paths.append(path)
             if is_auto and existed:
                 # save_profile's no-clobber guard kept the existing file —
                 # announce the keep, not a merge that did not happen.

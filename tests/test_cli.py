@@ -2830,11 +2830,13 @@ def test_write_labeled_outputs_saves_duplicate_confirmed_name_once_from_longest_
 ):
     """Two Enter confirmations for Alice save only the longest cluster once."""
     monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
-    # Speaker B has more transcript talk time, so its embedding must be the
-    # single new sample. Enter accepts Alice for both suggested defaults.
+    # Speaker A has the longest individual utterance, but Speaker B has more
+    # total transcript talk time across two fragments. Enter accepts Alice
+    # for both suggested defaults.
     merged = [
-        (cli.MR.WhisperSeg(start=0.0, end=2.0, text="short Alice fragment"), "Speaker A"),
-        (cli.MR.WhisperSeg(start=2.0, end=7.0, text="long Alice fragment"), "Speaker B"),
+        (cli.MR.WhisperSeg(start=0.0, end=5.0, text="longest utterance"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=5.0, end=8.0, text="first B fragment"), "Speaker B"),
+        (cli.MR.WhisperSeg(start=8.0, end=11.0, text="second B fragment"), "Speaker B"),
     ]
     cli.P.save_profile("Alice", [0.0, 0.0], samples=2, auto_match=True)
     answers = iter(["", ""])
@@ -2905,6 +2907,150 @@ def test_write_labeled_outputs_reports_one_keep_hint_for_duplicate_auto_matches(
     err = capsys.readouterr().err
     assert err.count("auto-match not merged") == 1
     assert "Auto-matched 2 cluster(s) to 1 distinct profile name(s)" in err
+
+
+def test_write_labeled_outputs_deduplicates_sanitized_profile_path(tmp_path, monkeypatch):
+    """Distinct display names that sanitize alike add only one sample."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=5.0, text="long first name"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=5.0, end=7.0, text="short underscore name"), "Speaker B"),
+    ]
+    cli.P.save_profile("Alice Smith", [0.0, 0.0], samples=2)
+    monkeypatch.setattr(
+        cli, "_prompt_speaker_names",
+        lambda _merged, default_names=None: {
+            "Speaker A": "Alice Smith", "Speaker B": "Alice_Smith",
+        },
+    )
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec", name_speakers=True,
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    data = json.loads((tmp_path / "Alice_Smith.json").read_text(encoding="utf-8"))
+    assert data["samples"] == 3
+    assert data["embedding"] == [1 / 3, 0.0]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_write_labeled_outputs_deduplicates_case_aliases_on_native_volume(
+    tmp_path, monkeypatch, existing,
+):
+    """Case aliases share one target if native storage aliases them, new or existing."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    probe_dir = tmp_path / "case-sensitivity-probe"
+    probe_dir.mkdir()
+    (probe_dir / "Alice").write_text("probe", encoding="utf-8")
+    native_aliases = (probe_dir / "alice").exists()
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=5.0, text="capitalized name"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=5.0, end=7.0, text="lowercase name"), "Speaker B"),
+    ]
+    if existing:
+        cli.P.save_profile("Alice", [0.0, 0.0], samples=2)
+    monkeypatch.setattr(
+        cli, "_prompt_speaker_names",
+        lambda _merged, default_names=None: {"Speaker A": "Alice", "Speaker B": "alice"},
+    )
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec", name_speakers=True,
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    profiles = sorted(tmp_path.glob("*.json"))
+    assert len(profiles) == (1 if native_aliases else 2)
+    if native_aliases:
+        data = json.loads(profiles[0].read_text(encoding="utf-8"))
+        assert data["samples"] == (3 if existing else 1)
+        assert data["embedding"] == ([1 / 3, 0.0] if existing else [1.0, 0.0])
+    else:
+        assert len(profiles) == 2
+        assert json.loads((tmp_path / "Alice.json").read_text(encoding="utf-8"))["samples"] == (
+            3 if existing else 1
+        )
+        assert json.loads((tmp_path / "alice.json").read_text(encoding="utf-8"))["samples"] == 1
+
+
+def test_write_labeled_outputs_prefers_confirmed_sanitized_alias_over_auto(
+    tmp_path, monkeypatch, capsys,
+):
+    """A confirmed alias owns the shared profile path before an auto alias."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=10.0, text="long auto alias"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=10.0, end=11.0, text="short confirmed alias"), "Speaker B"),
+    ]
+    cli.P.save_profile("Alice_Smith", [0.0, 0.0], samples=2)
+    monkeypatch.setattr(
+        cli, "_prompt_speaker_names",
+        lambda _merged, default_names=None: {"Speaker B": "Alice_Smith"},
+    )
+
+    cli._write_labeled_outputs(
+        merged, tmp_path / "rec", name_speakers=True,
+        profile_names={"Speaker A": "Alice Smith", "Speaker B": "Alice_Smith"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0]},
+        save_profiles=True,
+    )
+
+    data = json.loads((tmp_path / "Alice_Smith.json").read_text(encoding="utf-8"))
+    assert data["samples"] == 3
+    assert data["embedding"] == [0.0, 1 / 3]
+    assert "auto-match not merged" not in capsys.readouterr().err
+
+
+def test_speakers_names_keep_per_cluster_overrides_when_auto_names_repeat(tmp_path, monkeypatch, capsys):
+    """Positional names may intentionally split clusters that auto-match alike."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    merged = [
+        (cli.MR.WhisperSeg(start=0.0, end=10.0, text="Alice A"), "Speaker A"),
+        (cli.MR.WhisperSeg(start=10.0, end=15.0, text="Bob B"), "Speaker B"),
+        (cli.MR.WhisperSeg(start=15.0, end=21.0, text="Alice C explicitly named Bob"), "Speaker C"),
+    ]
+    cli.P.save_profile("Alice", [0.0, 0.0], samples=2)
+    cli.P.save_profile("Bob", [0.0, 0.0], samples=2)
+
+    _srt, _txt, _html, name_map = cli._write_labeled_outputs(
+        merged, tmp_path / "rec", speakers_names=["Alice", "Bob"],
+        profile_names={"Speaker A": "Alice", "Speaker C": "Alice", "Speaker B": "Bob"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.0, 1.0], 2: [1.0, 0.2]},
+        save_profiles=True,
+    )
+
+    assert name_map == {"Speaker A": "Alice", "Speaker B": "Bob", "Speaker C": "Bob"}
+    alice = json.loads((tmp_path / "Alice.json").read_text(encoding="utf-8"))
+    assert alice["samples"] == 3
+    assert alice["embedding"] == [1 / 3, 0.0]
+    bob = json.loads((tmp_path / "Bob.json").read_text(encoding="utf-8"))
+    assert bob["samples"] == 3
+    assert bob["embedding"] == [1 / 3, 0.2 / 3]
+    assert "auto-match not merged" not in capsys.readouterr().err
+
+
+def test_write_labeled_outputs_skips_profile_cluster_without_transcript_cues(
+    tmp_path, monkeypatch, capsys,
+):
+    """A matched diarization cluster may have no assigned Whisper cue."""
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path)
+    cli.P.save_profile("Alice", [1.0, 0.0], samples=2)
+    before = (tmp_path / "Alice.json").read_bytes()
+    merged = [(cli.MR.WhisperSeg(start=0.0, end=2.0, text="visible fragment"), "Speaker A")]
+
+    srt, _txt, _html, _map = cli._write_labeled_outputs(
+        merged, tmp_path / "rec",
+        profile_names={"Speaker A": "Alice", "Speaker B": "Alice"},
+        cluster_embeddings={0: [1.0, 0.0], 1: [0.99, 0.01]},
+        save_profiles=True,
+    )
+
+    assert "Alice: visible fragment" in srt.read_text(encoding="utf-8")
+    assert (tmp_path / "Alice.json").read_bytes() == before
+    assert capsys.readouterr().err.count("auto-match not merged") == 1
 
 
 def test_merge_speakers_names_overrides_wrong_auto_match(tmp_path, monkeypatch, capsys):
