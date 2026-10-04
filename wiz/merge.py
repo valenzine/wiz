@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -202,32 +203,51 @@ def _fmt_clock(t: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def format_dialogue_txt(merged: list[tuple[WhisperSeg, str]]) -> str:
-    """Emit a readable 'Speaker A (00:01:23): text' transcript.
-
-    Consecutive segments from the same speaker are merged into one block.
-    """
-    lines: list[str] = []
-    prev_label: str | None = None
-    prev_start: float | None = None
-    buf: list[str] = []
-
-    def flush() -> None:
-        if prev_label is not None and buf:
-            lines.append(f"{prev_label} ({_fmt_clock(prev_start)}): {' '.join(buf)}")
-        buf.clear()
-
-    for seg, label in merged:
-        text = seg.text.strip()
-        if not text:
+def _speaker_turns(
+    merged: list[tuple[WhisperSeg, str]],
+) -> Iterator[tuple[str, list[tuple[int, WhisperSeg]]]]:
+    """Yield adjacent speaker turns, retaining original frame indices."""
+    label: str | None = None
+    segments: list[tuple[int, WhisperSeg]] = []
+    for index, (segment, current_label) in enumerate(merged, start=1):
+        if not segment.text.strip():
             continue
-        if label != prev_label:
-            flush()
-            prev_label = label
-            prev_start = seg.start
-        buf.append(text)
-    flush()
-    return "\n\n".join(lines)
+        if segments and current_label != label:
+            yield label, segments
+            segments = []
+        label = current_label
+        segments.append((index, segment))
+    if segments:
+        yield label, segments
+
+
+def _turn_paragraphs(segments: list[tuple[int, WhisperSeg]]) -> list[str]:
+    """Join fragments; break long paragraphs only after supplied sentence punctuation.
+
+    The 600-character target is soft: an unfinished sentence stays together.
+    No words or punctuation are added, removed or inferred from timing.
+    """
+    text = " ".join(segment.text.strip() for _, segment in segments)
+    paragraphs: list[str] = []
+    start = 0
+    for boundary in re.finditer(r"[.!?…][\"'”’»)\]]*(?=\s|$)", text):
+        end = boundary.end()
+        if end - start >= 600:
+            paragraphs.append(text[start:end].strip())
+            start = end
+    if text[start:].strip():
+        paragraphs.append(text[start:].strip())
+    return paragraphs
+
+
+
+def format_dialogue_txt(merged: list[tuple[WhisperSeg, str]]) -> str:
+    """Emit consecutive speaker turns with one timestamp and readable paragraphs."""
+    turns: list[str] = []
+    for label, segments in _speaker_turns(merged):
+        body = "\n\n".join(_turn_paragraphs(segments))
+        turns.append(f"{label} ({_fmt_clock(segments[0][1].start)}): {body}")
+    return "\n\n".join(turns)
 
 
 # ---------- HTML transcript ----------
@@ -273,7 +293,8 @@ def format_speakers_html(
 ) -> str:
     """Emit a self-contained HTML transcript.
 
-    Color-coded per-speaker transcript with timestamps. If ``frames_dir`` is
+    Consecutive same-speaker fragments form one turn with a start timestamp.
+    Long turns use paragraphs at existing sentence boundaries. If ``frames_dir`` is
     given and contains ``segNNNN.jpg`` files (from a prior --screenshots run),
     frames are inlined as ``data:image/jpeg;base64`` URIs so the single HTML
     file is portable with every screenshot embedded — no external files needed.
@@ -362,7 +383,12 @@ main { max-width: 920px; margin: 0 auto; padding: 1em; }
 .cue .ts { color: var(--muted); font-size: .8em; font-variant-numeric: tabular-nums; text-decoration: none; border-radius: 4px; padding: 0 .2em; }
 .cue .ts:hover { background: var(--border); color: var(--text); }
 .cue .speaker { font-weight: 650; font-size: .92em; }
-.cue .text { font-size: .95em; white-space: pre-wrap; word-wrap: break-word; }
+.cue .text { font-size: .95em; white-space: normal; word-wrap: break-word; }
+.cue .text p { margin: 0 0 .8em; }
+.cue .text p:last-child { margin-bottom: 0; }
+.cue .frames { margin-top: .6em; }
+.cue .frames summary { color: var(--muted); cursor: pointer; }
+.cue .gallery { display: flex; flex-wrap: wrap; gap: .5em; margin-top: .4em; }
 .cue.hidden { display: none; }
 footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding: 1.5em; }
 /* Lightbox */
@@ -382,16 +408,18 @@ footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding:
     js = r"""
 (function () {
   var box = document.getElementById('lightbox');
-  var boxImg = box.querySelector('img');
-  function open(src) { boxImg.src = src; box.classList.add('open'); }
-  function close() { box.classList.remove('open'); boxImg.src = ''; }
-  document.querySelectorAll('.cue .frame').forEach(function (el) {
-    el.addEventListener('click', function () {
-      var img = el.querySelector('img'); if (img) open(img.src);
+  if (box) {
+    var boxImg = box.querySelector('img');
+    function open(src) { boxImg.src = src; box.classList.add('open'); }
+    function close() { box.classList.remove('open'); boxImg.src = ''; }
+    document.querySelectorAll('.cue .frame').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var img = el.querySelector('img'); if (img) open(img.src);
+      });
     });
-  });
-  box.addEventListener('click', function (e) { if (e.target === box || e.target.classList.contains('close')) close(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+    box.addEventListener('click', function (e) { if (e.target === box || e.target.classList.contains('close')) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  }
   var search = document.getElementById('search');
   if (search) {
     search.addEventListener('input', function () {
@@ -434,34 +462,42 @@ footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding:
         parts.append(f'<p class="note">{_html_escape(note)}</p>')
     cue_count = 0
     has_frame = False
-    for i, (seg, label) in enumerate(merged, start=1):
-        text = seg.text.strip()
-        if not text:
-            continue
+    for label, segments in _speaker_turns(merged):
         cue_count += 1
+        i, first = segments[0]
         color = _speaker_color(label)
-        ts = _fmt_clock(seg.start)
+        ts = _fmt_clock(first.start)
         parts.append(f'<div class="cue" style="--c:{color}">')
-        # Inline frame thumbnail if it exists (clickable -> lightbox).
+        # Frames retain their original segment indices after text grouping.
+        frames: list[str] = []
         if frames_dir is not None:
-            frame_path = frames_dir / f"seg{i:04d}.jpg"
-            if frame_path.exists():
-                has_frame = True
-                b64 = base64.b64encode(frame_path.read_bytes()).decode("ascii")
-                parts.append(
-                    f'<div class="frame"><img src="data:image/jpeg;base64,{b64}" alt="frame {i}"></div>'
-                )
+            for index, _segment in segments:
+                frame_path = frames_dir / f"seg{index:04d}.jpg"
+                if frame_path.exists():
+                    has_frame = True
+                    b64 = base64.b64encode(frame_path.read_bytes()).decode("ascii")
+                    frames.append(
+                        f'<div class="frame"><img src="data:image/jpeg;base64,{b64}" alt="frame {index}"></div>'
+                    )
         parts.append('<div class="body">')
         parts.append('<div class="meta">')
         parts.append(f'<a class="ts" href="#cue-{i}" id="cue-{i}">{ts}</a>')
         parts.append(f'<span class="speaker" style="color:{color}">{_html_escape(label)}</span>')
-        parts.append('</div>')  # .meta
-        parts.append(f'<div class="text">{_html_escape(text)}</div>')
-        parts.append('</div></div>')  # .body and .cue
+        parts.append('</div>')
+        parts.append('<div class="text">')
+        for paragraph in _turn_paragraphs(segments):
+            parts.append(f'<p>{_html_escape(paragraph)}</p>')
+        parts.append('</div>')
+        if len(frames) > 1:
+            parts.append(f'<details class="frames"><summary>{len(frames)} frames</summary>')
+            parts.append('<div class="gallery">' + "".join(frames) + '</div></details>')
+        elif frames:
+            parts.extend(frames)
+        parts.append('</div></div>')
     parts.append('</main>')
 
     if cue_count:
-        parts.append(f'<div class="foot">{cue_count} cue(s)</div>')
+        parts.append(f'<div class="foot">{cue_count} speaker turn(s)</div>')
 
     # Lightbox overlay (only when at least one frame was inlined, so a
     # frames-less transcript emits no <img> tags at all).
@@ -470,7 +506,7 @@ footer.foot { text-align: center; color: var(--muted); font-size: .8em; padding:
         parts.append('<button class="close" aria-label="Close">&times;</button>')
         parts.append('<img alt="fullscreen frame">')
         parts.append('</div>')
-        parts.append(f'<script>{js}</script>')
+    parts.append(f'<script>{js}</script>')
 
     parts.append('</body>\n</html>')
     return "\n".join(parts)

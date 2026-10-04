@@ -2895,7 +2895,7 @@ def test_combined_speaker_naming_preserves_cluster_identity_for_profile_saves(
     # Dialogue TXT combines consecutive cues belonging to the same speaker.
     turn_names = [name for index, name in enumerate(expected_names) if not index or name != expected_names[index - 1]]
     assert [line.split(" (", 1)[0] for line in txt.read_text().splitlines() if line] == turn_names
-    assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html.read_text()) == expected_names
+    assert re.findall(r'<span class="speaker"[^>]*>(.*?)</span>', html.read_text()) == turn_names
     for output in (srt, txt, html):
         assert "first voice" in output.read_text()
         assert "second voice" in output.read_text()
