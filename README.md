@@ -463,7 +463,7 @@ When diarization is on, whisper-cli VAD is disabled (sherpa-onnx handles speech 
 There are two ways to name speakers:
 
 - **Interactive** — pass `--name-speakers` and, after transcription + diarization, wiz shows one representative quote per detected speaker (the longest utterance — most identifying) and prompts for a real name. Blank input keeps the default `Speaker A` label.
-- **Non-interactive** — pass `--speakers-names Alice,Bob,Carol,Dave` to name speakers in a single command. Names are assigned to speakers ordered by total speaking time (most talkative gets the first name). Extra names beyond the detected speaker count are ignored; speakers beyond the provided names keep their `Speaker A/B/C` labels.
+- **Non-interactive** — pass `--speakers-names Alice,Bob,Carol,Dave` to name detected clusters in a single command. Names are assigned by total speaking time (most talkative cluster gets the first name) and override voice-profile suggestions. If one person spans several clusters, repeat that name for each cluster or use `--name-speakers` to name them individually. Extra names beyond the cluster count are ignored; clusters beyond the provided names retain their profile matches or generic `Speaker A/B/C` labels.
 
 Both can be combined: `--speakers-names` provides defaults that are shown in the `--name-speakers` prompt, so you can confirm or override each one. Real names replace the `Speaker A/B/C` labels in both `*.speakers.srt` and `*.speakers.txt`.
 

@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on 
 
 - Allow multiple diarization clusters to match the same stored voice profile. Each cluster independently selects its best match at or above the threshold, keeping names consistent across SRT, dialogue TXT, HTML, and `speakers match`. Automatic matches leave existing profiles unchanged.
 - Save one profile sample per confirmed name per run, using the confirmed cluster with the most transcript talk time.
+- Prevent duplicate profile updates when spelling variants resolve to the same profile file.
 - Report matched clusters and distinct profile names separately. Show the existing-profile notice once per name for automatic matches.
 
 ### Changed
