@@ -32,6 +32,7 @@ from wiz import __version__
 from wiz import audio as aud
 from wiz import config as cfg
 from wiz import diarize as D
+from wiz import nemotron as N
 from wiz import merge as MR
 from wiz import models as M
 from wiz import screenshots as SC
@@ -92,18 +93,22 @@ def _diarization_window_shift(value: str) -> float:
 
 
 def _add_diarization_execution_arguments(parser: argparse.ArgumentParser) -> None:
-    """Add shared sherpa-onnx execution overrides to a command parser."""
+    """Add backend and execution overrides shared by diarization commands."""
+    parser.add_argument("--diarization-backend", choices=sorted(cfg.DIARIZATION_BACKENDS), default=None, help="speaker engine (default: config diarization_backend, nemotron)")
+    parser.add_argument("--nemo-speech-cli", default=None, help="native nemo-speech executable (default: PATH or official installation)")
+    parser.add_argument("--nemotron-model", default=None, help="Nemotron GGUF model path (default: downloaded model cache)")
+    parser.add_argument("--nemotron-device", choices=sorted(cfg.NEMOTRON_DEVICES), default=None, help="native execution device (default: config nemotron_device, auto)")
     parser.add_argument(
         "--diarization-provider",
         choices=sorted(cfg.DIARIZATION_PROVIDERS),
         default=None,
-        help="sherpa-onnx provider (default: config diarization_provider, cpu)",
+        help="sherpa diarization / voice-profile provider (default: config diarization_provider, cpu)",
     )
     parser.add_argument(
         "--diarization-threads",
         type=_positive_diarization_threads,
         default=None,
-        help="sherpa-onnx inference threads (default: config diarization_threads, 1)",
+        help="sherpa diarization / voice-profile inference threads (default: config diarization_threads, 1)",
     )
     parser.add_argument(
         "--diarization-window-shift",
@@ -119,6 +124,10 @@ def _apply_diarization_execution_overrides(
     args: argparse.Namespace, config: cfg.Config,
 ) -> None:
     """Apply command overrides; sherpa entry points validate when used."""
+    for key in ("diarization_backend", "nemo_speech_cli", "nemotron_model", "nemotron_device"):
+        value = getattr(args, key, None)
+        if value is not None:
+            setattr(config, key, value)
     provider = getattr(args, "diarization_provider", None)
     threads = getattr(args, "diarization_threads", None)
     window_shift = getattr(args, "diarization_window_shift", None)
@@ -128,6 +137,47 @@ def _apply_diarization_execution_overrides(
         config.diarization_threads = threads
     if window_shift is not None:
         config.diarization_window_shift = window_shift
+
+
+
+def _validate_diarization_options(args: argparse.Namespace, config: cfg.Config) -> None:
+    for key, allowed in (("diarization_backend", cfg.DIARIZATION_BACKENDS), ("nemotron_device", cfg.NEMOTRON_DEVICES)):
+        value = getattr(config, key)
+        if not isinstance(value, str) or value not in allowed:
+            raise SystemExit(f"Invalid {key}={value!r}. Choose: {', '.join(sorted(allowed))}")
+    if config.diarization_backend == "nemotron":
+        if getattr(args, "speakers", 0) or getattr(args, "cluster_threshold", None) is not None or getattr(args, "diarization_window_shift", None) is not None:
+            raise SystemExit("Nemotron detects speakers automatically and uses the v3-offline preset. For --speakers N, --cluster-threshold or --diarization-window-shift, select --diarization-backend sherpa. Use --speakers without a number for Nemotron.")
+
+
+def _diarization_threshold(args: argparse.Namespace, config: cfg.Config) -> float | None:
+    if config.diarization_backend == "nemotron":
+        return None
+    value = args.cluster_threshold
+    return value if value is not None else config.cluster_threshold
+
+
+def _diarization_setup_hint(config: cfg.Config) -> str:
+    if config.diarization_backend == "nemotron":
+        return "Install NeMo-Speech.cpp (https://github.com/NVIDIA/NeMo-Speech.cpp/blob/main/docs/install.md), then run: wiz models download-diarization"
+    return f"{D.DIARIZE_INJECT} && wiz models download-diarization --diarization-backend sherpa"
+
+
+def _ensure_voice_profiles_ready(config: cfg.Config, *, setup_allowed: bool) -> None:
+    """Set up the independent embedding extractor without downloading Pyannote."""
+    if config.diarization_backend == "sherpa":
+        return
+    try:
+        import sherpa_onnx  # noqa: F401
+    except ImportError:
+        if not setup_allowed or not _auto_setup_consent(config) or not _install_sherpa_onnx():
+            raise RuntimeError("Voice profiles require sherpa-onnx; install the diarize extra to enable matching.")
+    if D.find_embedding_model(config) is None:
+        if config.diarization_embedding_model:
+            raise RuntimeError("Configured voice-profile embedding model does not exist.")
+        if not setup_allowed or not _auto_setup_consent(config):
+            raise RuntimeError("Voice-profile embedding model missing; run wiz models download-diarization.")
+        D.download_embedding_model()
 
 
 def _outputs_include(args: argparse.Namespace, config: cfg.Config, fmt: str) -> bool:
@@ -316,13 +366,9 @@ def _video_auto_flags(args: argparse.Namespace, in_path: Path) -> tuple[bool, bo
 
 
 def _diarization_available(config: cfg.Config) -> bool:
-    """True if sherpa-onnx + diarization models are ready (no heavy import).
-
-    The segmentation/embedding model files are checked via the diarize module's
-    finders (filesystem only); sherpa_onnx itself is imported lazily just to
-    confirm the package is present. Used to gracefully skip auto-enabled
-    diarization on machines that haven't run the one-time setup.
-    """
+    """Check the selected runtime and model files without inference."""
+    if config.diarization_backend == "nemotron":
+        return N.find_runtime(config) is not None and N.find_model(config) is not None
     if D.find_segmentation_model(config) is None or D.find_embedding_model(config) is None:
         return False
     try:
@@ -410,9 +456,8 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     if not (sys.stdin.isatty() and sys.stderr.isatty()):
         return True
     ui.status(
-        "Speakers: diarization needs a one-time setup — install "
-        f"'{D.DIARIZE_REQUIREMENT}' into this Python environment and "
-        "download the diarization models (~90 MB).",
+        "Speakers: one-time setup downloads models and may install "
+        f"'{D.DIARIZE_REQUIREMENT}' for voice profiles or sherpa diarization.",
         kind="info",
     )
     # input() writes its prompt to stdout without a trailing newline — the
@@ -428,8 +473,7 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
     if not allowed:
         ui.status(
             "Skipping the one-time diarization setup (declined). Install "
-            f"manually with: {D.DIARIZE_INJECT} && wiz models "
-            "download-diarization — or allow it later with: wiz config set "
+            f"manually with: {_diarization_setup_hint(config)} — or allow it later with: wiz config set "
             "auto_diarization_setup=true",
             kind="hint",
         )
@@ -445,30 +489,30 @@ def _auto_setup_consent(config: cfg.Config) -> bool:
 
 
 def _ensure_diarization_ready(config: cfg.Config, *, dry_run: bool = False, setup_allowed: bool = True) -> bool:
-    """Make diarization possible before a run: install package + download models.
+    """Prepare the selected backend, respecting setup consent and dry runs.
 
-    Proactive-first policy (user decision, 2026-09-05): when diarization is
-    about to run — auto-enabled for video or explicitly requested — and the
-    one-time setup is missing, wiz performs it on the spot instead of
-    degrading: ``_install_sherpa_onnx`` (pip install of the diarize extra's
-    declared spec into the running venv), then ``D.download_diarization_models``
-    (~90 MB one-time download). The degraded fallbacks stay as the safety net
-    for when setup fails (offline, disk full, ...), is opted out via
-    ``--no-auto-diarization-setup``, or is declined at the consent prompt.
-
-    Review decision (2026-09-07): unlike the VAD model download (a cache
-    file), this writes into site-packages, so an interactive terminal is
-    ASKED first (y/N, once — the answer persists in the
-    ``auto_diarization_setup`` config key). Non-interactive sessions
-    (piped stdin/stderr: scripts, cron, launchd) proceed automatically so a
-    fresh machine still just works; ``auto_diarization_setup`` answers
-    permanently either way.
-
-    Returns True when diarization is ready (either it already was, or setup
-    succeeded). DRY-RUN reports what would be installed/downloaded and never
-    performs the setup. A False return must leave callers on their existing
-    degraded/skip path — setup failure is never a crash here.
+    Native execution requires a separately installed NeMo-Speech.cpp runtime;
+    setup can download its verified model. Sherpa setup installs the optional
+    package and segmentation/embedding models. Voice-profile setup is separate.
+    False means callers should use their established degraded/error paths.
     """
+    if config.diarization_backend == "nemotron":
+        if N.find_runtime(config) is None:
+            ui.status("Nemotron runtime missing.", kind="hint", detail=_diarization_setup_hint(config))
+            return False
+        if N.find_model(config) is not None:
+            return True
+        if dry_run:
+            ui.muted("DRY-RUN: would download the verified Nemotron model (~107 MB).")
+            return False
+        if not setup_allowed or not _auto_setup_consent(config):
+            return False
+        try:
+            N.download_model()
+        except Exception as e:
+            ui.status(f"Warning: Nemotron model download failed: {e}", kind="warn")
+            return False
+        return _diarization_available(config)
     if _diarization_available(config):
         return True
     if dry_run:
@@ -599,7 +643,7 @@ def _build_transcribe_args(
     ) and speakers_auto and args.speakers is None:
         ui.status("Speakers: diarization not available (setup incomplete); skipping speaker labels for this run.",
                   kind="hint",
-                  detail=f"Run manually: {D.DIARIZE_INJECT} && wiz models download-diarization")
+                  detail="Run manually: " + _diarization_setup_hint(config))
         ui.muted("  Or silence this with: --no-speakers")
         diarize_enabled = False
         speakers_auto = False
@@ -713,7 +757,7 @@ def _build_transcribe_args(
     # VAD. When diarizing, sherpa-onnx handles speech segmentation, so skip whisper-cli VAD.
     vad_enabled = (args.vad if args.vad is not None else config.vad) and not diarize_enabled
     if diarize_enabled:
-        ui.info("Diarization enabled; disabling whisper-cli VAD (sherpa-onnx handles segmentation).")
+        ui.info("Diarization enabled; disabling whisper-cli VAD (the diarization engine handles segmentation).")
     vad_flags: list[str] = []
     if vad_enabled:
         vad_flags = ["--vad", "-vt", str(args.vad_threshold if args.vad_threshold is not None else config.vad_threshold)]
@@ -1305,7 +1349,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
     is re-raised.
     """
     num_sp = args.speakers if args.speakers else 0
-    thr = args.cluster_threshold if args.cluster_threshold is not None else config.cluster_threshold
+    thr = _diarization_threshold(args, config)
     try:
         diar_segments = D.run_diarization(
             wav, config, num_speakers=num_sp, threshold=thr,
@@ -1329,7 +1373,7 @@ def _run_diarize_or_fallback(wav: Path, config: cfg.Config, args: argparse.Names
         lead = ("Falling back to generic 'Speaker' labels. Enable with: "
                 if _will_write_generic_labels(args) else
                 "Skipping speaker labels for this run. Enable with: ")
-        detail = lead + f"{D.DIARIZE_INJECT} && wiz models download-diarization"
+        detail = lead + _diarization_setup_hint(config)
         extra = _discarded_naming_detail(args)
         if extra:
             detail += f" {extra}"
@@ -1371,6 +1415,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
     try:
         config = cfg.load()
         _apply_diarization_execution_overrides(args, config)
+        _validate_diarization_options(args, config)
         prepared = _build_transcribe_args(args, config, timings=timings)
         _cmd, _model, wav, in_path, keep_wav, *_rest = prepared
         timings.skip(
@@ -1422,7 +1467,7 @@ def _cmd_transcribe_prepared(
     if args.dry_run:
         if diarize_enabled:
             num_sp = args.speakers if args.speakers else 0
-            thr = args.cluster_threshold if args.cluster_threshold is not None else config.cluster_threshold
+            thr = _diarization_threshold(args, config)
             D.run_diarization(wav, config, num_speakers=num_sp, threshold=thr, dry_run=True)
         ui.muted("\nDRY-RUN: not executing whisper-cli.")
         return 0
@@ -1494,6 +1539,7 @@ def _cmd_transcribe_prepared(
             if not args.no_voice_profiles:
                 try:
                     with timings.measure("Speaker profiles"):
+                        _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
                         cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                         if cluster_embeddings:
                             profile_names, matches = P.auto_assign_names(
@@ -1772,7 +1818,16 @@ def cmd_models_download_vad(args: argparse.Namespace) -> int:
 def cmd_models_download_diarization(args: argparse.Namespace) -> int:
     dest = Path(args.dest).expanduser() if args.dest else None
     try:
-        seg, emb = D.download_diarization_models(dest_dir=dest)
+        config = cfg.load()
+        if getattr(args, "diarization_backend", None):
+            config.diarization_backend = args.diarization_backend
+        _validate_config_value("diarization_backend", config.diarization_backend)
+        if config.diarization_backend == "nemotron":
+            N.download_model(dest_dir=dest)
+            D.download_embedding_model(dest_dir=dest)
+            ui.info(_diarization_setup_hint(config))
+        else:
+            D.download_diarization_models(dest_dir=dest)
         print("\nDone. Enable with: wiz transcribe --speakers <file>")
         return 0
     except Exception as e:  # noqa: BLE001
@@ -2115,6 +2170,7 @@ def _cmd_merge_prepared(
 ) -> int:
     config = cfg.load()
     _apply_diarization_execution_overrides(args, config)
+    _validate_diarization_options(args, config)
     in_path = Path(args.file).expanduser()
     if not in_path.exists():
         raise SystemExit(f"Input file not found: {in_path}")
@@ -2208,7 +2264,7 @@ def _cmd_merge_prepared(
 
     # Diarization params.
     num_sp = args.speakers if args.speakers else 0
-    thr = args.cluster_threshold if args.cluster_threshold is not None else config.cluster_threshold
+    thr = _diarization_threshold(args, config)
     ui.muted(f"Diarize: num_speakers={num_sp or 'auto'} cluster_threshold={thr}")
 
     want_html = _outputs_include(args, config, "html")
@@ -2265,8 +2321,7 @@ def _cmd_merge_prepared(
             naming = _discarded_naming_detail(args)
             if speakers_auto and args.speakers is None:
                 # Auto-enabled only: fall back to unlabeled output, don't crash.
-                detail = (f"Skipping speaker labels. Enable with: {D.DIARIZE_INJECT} "
-                          "&& wiz models download-diarization")
+                detail = "Skipping speaker labels. Enable with: " + _diarization_setup_hint(config)
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2277,8 +2332,7 @@ def _cmd_merge_prepared(
                 # Explicitly requested, but an HTML transcript / screenshots
                 # can still be produced: degrade to generic 'Speaker' labels
                 # instead of crashing (mirrors the `wiz transcribe` fallback).
-                detail = ("Falling back to generic 'Speaker' labels. Enable with: "
-                          f"{D.DIARIZE_INJECT} && wiz models download-diarization")
+                detail = "Falling back to generic 'Speaker' labels. Enable with: " + _diarization_setup_hint(config)
                 if naming:
                     detail += f" {naming}"
                 ui.status(f"Speakers: diarization unavailable — {msg.splitlines()[0]}",
@@ -2287,8 +2341,7 @@ def _cmd_merge_prepared(
                 degraded_note_shown = True
             else:
                 raise SystemExit(
-                    f"{msg}\nEnable diarization with: {D.DIARIZE_INJECT} && "
-                    f"wiz models download-diarization"
+                    f"{msg}\nEnable diarization with: {_diarization_setup_hint(config)}"
                 )
     else:
         timings.skip("Diarization", "not requested")
@@ -2325,7 +2378,7 @@ def _cmd_merge_prepared(
             "Speakers: diarization ran WITHOUT the one-time setup — a cached "
             "diarization result was reused for this WAV.",
             kind="info",
-            detail=str(D.diar_cache_path(wav)),
+            detail=str(N.cache_path(in_path) if config.diarization_backend == "nemotron" else D.diar_cache_path(wav)),
         )
 
     merged = MR.assign_speakers(whisper_segs, diar_segments) if diar_segments else []
@@ -2344,6 +2397,7 @@ def _cmd_merge_prepared(
     if merged and not args.no_voice_profiles:
         try:
             with timings.measure("Speaker profiles"):
+                _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
                 cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                 if cluster_embeddings:
                     profile_names, _matches = P.auto_assign_names(
@@ -2529,6 +2583,7 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
     """
     config = cfg.load()
     _apply_diarization_execution_overrides(args, config)
+    _validate_diarization_options(args, config)
     in_path = Path(args.file).expanduser()
     if not in_path.exists():
         raise SystemExit(f"Input file not found: {in_path}")
@@ -2546,7 +2601,7 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
         wav = in_path
 
     num_sp = args.speakers if args.speakers else 0
-    thr = args.cluster_threshold if args.cluster_threshold is not None else config.cluster_threshold
+    thr = _diarization_threshold(args, config)
     # Proactive-first: this command needs diarization by definition; attempt
     # the one-time setup before failing (unless the caller opts out).
     if not _ensure_diarization_ready(
@@ -2555,10 +2610,8 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
         setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
     ):
         raise SystemExit(
-            "Diarization unavailable (sherpa-onnx or models missing, setup "
-            "failed or opted out).\n"
-            f"Run manually: {D.DIARIZE_INJECT} && "
-            "wiz models download-diarization"
+            "Diarization unavailable (runtime or models missing, setup failed or opted out).\n"
+            f"Run manually: {_diarization_setup_hint(config)}"
         )
 
     diarization_source = wav
@@ -2594,6 +2647,7 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
         with timings.measure("Speaker profiles"):
             profiles = P.load_profiles()
             if profiles:
+                _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
                 cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                 matches = P.match_speakers(
                     cluster_embeddings, profiles, threshold=config.speaker_match_threshold,
@@ -2703,6 +2757,8 @@ def _coerce(value: str, field_type: type):
 # silently degrade behaviour.
 _CONFIG_ENUM_VALUES: dict[str, set[str]] = {
     "diarization_provider": set(cfg.DIARIZATION_PROVIDERS),
+    "diarization_backend": set(cfg.DIARIZATION_BACKENDS),
+    "nemotron_device": set(cfg.NEMOTRON_DEVICES),
 }
 
 
@@ -2837,10 +2893,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--no-progress", dest="no_progress", action="store_true", help="Disable whisper-cli progress passthrough (forces -np)")
     t.add_argument("--keep-wav", action="store_true", help="Keep the intermediate extracted WAV (default: deleted after)")
     t.add_argument("--no-auto-vad-download", action="store_true", help="Don't auto-download the Silero VAD model when VAD is enabled and missing")
-    t.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
-    t.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Enable speaker diarization via sherpa-onnx. Optional integer = known speaker count; omit = auto-detect. Auto-enabled for video inputs (see --no-speakers)")
+    t.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Disable automatic model downloads and optional voice-profile / sherpa package installation")
+    t.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Enable speaker diarization. Omit count for automatic detection; known count requires --diarization-backend sherpa. Auto-enabled for video inputs (see --no-speakers)")
     t.add_argument("--no-speakers", dest="no_speakers", action="store_true", help="Disable the auto-enabled speaker diarization for video inputs (opt out)")
-    t.add_argument("--cluster-threshold", type=float, default=None, help="Diarization clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
+    t.add_argument("--cluster-threshold", type=float, default=None, help="Sherpa-only clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
     _add_diarization_execution_arguments(t)
     t.add_argument("--name-speakers", action="store_true", help="Interactively prompt to name each detected speaker. Auto-enabled when diarization runs (see --no-name-speakers)")
     t.add_argument("--no-name-speakers", dest="no_name_speakers", action="store_true", help="Disable the auto-enabled interactive speaker-naming prompt (opt out)")
@@ -2863,10 +2919,10 @@ def build_parser() -> argparse.ArgumentParser:
     mg.add_argument("file", help="Input audio/video file (used to find the whisper JSON and re-extract WAV if needed)")
     mg.add_argument("--json", default="", help="Explicit path to the whisper JSON (default: auto-find next to input)")
     mg.add_argument("--outputs", default=None, help="Comma-separated wiz post-merge output formats: html (others are whisper-cli formats, ignored here)")
-    mg.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Known speaker count; omit = auto-detect. Auto-enabled for video inputs (see --no-speakers)")
+    mg.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Enable automatic detection; known count requires --diarization-backend sherpa. Auto-enabled for video inputs (see --no-speakers)")
     mg.add_argument("--no-speakers", dest="no_speakers", action="store_true", help="Disable the auto-enabled speaker diarization for video inputs (opt out)")
-    mg.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
-    mg.add_argument("--cluster-threshold", type=float, default=None, help="Clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
+    mg.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Disable automatic model downloads and optional voice-profile / sherpa package installation")
+    mg.add_argument("--cluster-threshold", type=float, default=None, help="Sherpa-only clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)")
     _add_diarization_execution_arguments(mg)
     mg.add_argument("--name-speakers", action="store_true", help="Interactively prompt to name each detected speaker. Auto-enabled when diarization runs (see --no-name-speakers)")
     mg.add_argument("--no-name-speakers", dest="no_name_speakers", action="store_true", help="Disable the auto-enabled interactive speaker-naming prompt (opt out)")
@@ -2890,8 +2946,9 @@ def build_parser() -> argparse.ArgumentParser:
     mvd.add_argument("version", nargs="?", default="", help="VAD version, e.g. 'v5.1.2', 'v6.2.0', or full filename (default: v5.1.2)")
     mvd.add_argument("--dest", default="", help="Destination directory (default: ~/.cache/whisper)")
     mvd.set_defaults(func=cmd_models_download_vad)
-    mdiar = msub.add_parser("download-diarization", aliases=["diar"], help="Download diarization models (sherpa-onnx segmentation + embedding)")
+    mdiar = msub.add_parser("download-diarization", aliases=["diar"], help="Download models for the selected diarization backend and voice profiles")
     mdiar.add_argument("--dest", default="", help="Destination directory (default: ~/.cache/wiz/diarization)")
+    mdiar.add_argument("--diarization-backend", choices=sorted(cfg.DIARIZATION_BACKENDS), default=None)
     mdiar.set_defaults(func=cmd_models_download_diarization)
 
     # analyze
@@ -2918,10 +2975,10 @@ def build_parser() -> argparse.ArgumentParser:
     sf.set_defaults(func=cmd_speakers_forget)
     sm = spsub.add_parser("match", help="Show how a recording's clusters match stored profiles (relabels/saves nothing — may still run the one-time diarization setup if missing)")
     sm.add_argument("file", help="Input audio/video file")
-    sm.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Known speaker count; omit = auto-detect")
-    sm.add_argument("--cluster-threshold", type=float, default=None, help="Clustering threshold when auto-detecting (default 0.9)")
+    sm.add_argument("--speakers", type=int, default=None, nargs="?", const=0, help="Enable automatic detection; known count requires --diarization-backend sherpa")
+    sm.add_argument("--cluster-threshold", type=float, default=None, help="Sherpa-only clustering threshold when auto-detecting (default 0.9)")
     _add_diarization_execution_arguments(sm)
-    sm.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Don't auto-install sherpa-onnx / auto-download diarization models when diarization is enabled and missing (one-time setup, ~90 MB)")
+    sm.add_argument("--no-auto-diarization-setup", dest="no_auto_diarization_setup", action="store_true", help="Disable automatic model downloads and optional voice-profile / sherpa package installation")
     sm.set_defaults(func=cmd_speakers_match)
 
     # config
