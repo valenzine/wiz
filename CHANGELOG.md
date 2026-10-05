@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] - 2026-10-04
+
+### Changed
+
+- Use native Nemotron automatic speaker diarization by default on `transcribe`, `merge` and `speakers match`, with the long-recording `v3-offline` preset. Preserve saved-speaker recognition and readable dialogue exports.
+- Retain sherpa diarization through `--diarization-backend sherpa` for explicit speaker counts and clustering controls. Reject unsupported native options with guidance.
+
+### Added
+
+- Native runtime/model/device configuration, verified model downloads and a separate diarization cache that records the input, model, runtime libraries, device and preset. Document NeMo-Speech.cpp installation and podcast transcription.
+
 ## [0.19.0] - 2026-10-04
 
 ### Changed

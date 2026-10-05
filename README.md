@@ -8,11 +8,11 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.19.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.20.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
-[![Powered by whisper.cpp](https://img.shields.io/badge/powered%20by-whisper.cpp%20%2B%20sherpa--onnx-F0A32E)](https://github.com/ggerganov/whisper.cpp)
+[![Powered by whisper.cpp](https://img.shields.io/badge/powered%20by-whisper.cpp%20%2B%20NeMo--Speech.cpp-F0A32E)](https://github.com/ggerganov/whisper.cpp)
 
 ```bash
 wiz transcribe recording.mov
@@ -24,7 +24,7 @@ wiz transcribe recording.mov
 
 <img src="docs/assets/wiz-tape.svg" alt="A waveform coloured by who is speaking, the speaker bands under it, and the frames captured at 00:12, 04:31, 09:04 and 17:40." width="100%">
 
-wiz transcribes, detects who spoke when, prompts you to name each speaker, captures an on-screen frame per segment, and emits a self-contained HTML transcript — all from that single command. Then it can AI-analyze the whole thing (with the frames) and write a concentrated Essentials section you feed back to a later analysis. It's powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp) for transcription and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for diarization, with a polished terminal UI built on [rich](https://rich.readthedocs.io).
+wiz transcribes, detects who spoke when, prompts you to name each speaker, captures an on-screen frame per segment, and emits a self-contained HTML transcript — all from that single command. Then it can AI-analyze the whole thing (with the frames) and write a concentrated Essentials section you feed back to a later analysis. It's powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp) for transcription and [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) for Nemotron diarization, with a polished terminal UI built on [rich](https://rich.readthedocs.io).
 
 <img src="docs/assets/wiz-transcript.svg" alt="A frame-illustrated HTML transcript: Alice, Bob, Carol and Dave each in their own colour, with the frame that was on screen beside every line." width="100%">
 
@@ -35,7 +35,7 @@ wiz transcribes, detects who spoke when, prompts you to name each speaker, captu
 Most transcription tools stop at text. wiz is the one-command path from a screen recording to a **labeled, named, frame-illustrated HTML transcript plus an AI analysis with a concentrated Essentials section** — all local, no server, no API keys required.
 
 - **One command, everything** — transcribe + diarize + name speakers + capture frames + write HTML, automatically.
-- **Knows your speakers** — voice profiles save each speaker once you name them; later recordings with the same people are labeled automatically, no flags needed. Profiles even merge across recordings and get more accurate over time.
+- **Knows your speakers** — voice profiles save each speaker once you name them; later recordings with the same people are labeled automatically, no flags needed. Explicit confirmation can update profiles across recordings; automatic matches preserve existing profiles.
 - **Sees the screen** — auto-enables vision analysis when frames exist and your model is vision-capable. The analyst posture actively reconciles what's visible on screen with what was said, surfacing discrepancies, and treats consecutive frames as a visual timeline (not independent screenshots) so it reasons across the sequence.
 - **Made for long videos** — a rolling-context map-reduce keeps each model call focused on a small, coherent window so analysis quality stays high even on hour-long recordings. Zero extra calls.
 - **Essentials you feed back** — every analysis appends a dense `## Essentials` bullet list (every fact, decision, number, UI detail) designed as concentrated context for a later `wiz analyze`. No flag, no second file.
@@ -85,7 +85,7 @@ For the full set of flags, run `wiz transcribe --help`, `wiz merge --help`, or `
 
 - Python ≥ 3.11
 - [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) on `PATH` (e.g. `brew install whisper-cpp`)
-- [`ffmpeg`](https://ffmpeg.org) on `PATH` (e.g. `brew install ffmpeg`) — only needed for video inputs
+- [`ffmpeg`](https://ffmpeg.org) on `PATH` (e.g. `brew install ffmpeg`) — needed for video extraction and audio that is not already 16 kHz mono PCM WAV
 - At least one ggml Whisper model (see [Install](#install) below)
 
 ## Install
@@ -119,10 +119,10 @@ wiz models download turbo      # ggml-large-v3-turbo.bin — unquantized (NS-15)
 
 ## What it does
 
-<img src="docs/assets/wiz-pipeline.svg" alt="One command runs six steps: extract the audio, transcribe with whisper.cpp, diarize with sherpa-onnx, name the speakers, capture a frame per segment and write a self-contained HTML transcript." width="100%">
+<img src="docs/assets/wiz-pipeline.svg" alt="One command runs six steps: extract the audio, transcribe with whisper.cpp, diarize with Nemotron, name the speakers, capture a frame per segment and write a self-contained HTML transcript." width="100%">
 
 - **Transcribe** audio or video — auto-finds the best Whisper model, extracts audio from video containers, resolves friendly model aliases (`turbo`, `large-v3`).
-- **Diarize** mono recordings (meetings, screen recordings) into `Speaker A/B/C…` labels via sherpa-onnx. Auto-on for video inputs.
+- **Diarize** mono recordings (meetings, screen recordings) into `Speaker A/B/C…` labels via native Nemotron. Auto-on for video inputs.
 - **Name speakers** — interactively prompt for real names, or pass them non-interactively. Names replace the raw labels everywhere.
 - **Voice profiles** — save a speaker's embedding once you name them; later recordings with the same people are labeled automatically, no flags needed.
 - **Screenshots** — capture one on-screen frame per segment into a manifest + HTML transcript. Auto-on for video inputs.
@@ -202,7 +202,7 @@ wiz transcribe --outputs srt,html recording.mov    # → + self-contained HTML t
 wiz transcribe --analyze recording.mov             # → + AI analysis (auto-detect) + Essentials
 
 # --- Audio meetings ---
-wiz transcribe --speakers 4 --name-speakers meeting.m4a   # diarize + name speakers
+wiz transcribe --speakers --name-speakers meeting.m4a   # diarize + name speakers
 wiz transcribe --speakers-names Alice,Bob,Carol,Dave meeting.m4a   # non-interactive names
 
 # --- Re-tune without re-transcribing ---
@@ -261,7 +261,7 @@ wiz models download large-v3 --dest ~/models
 wiz models known                      # canonical whisper.cpp model filenames
 wiz models download-vad               # Silero VAD model (default: v5.1.2)
 wiz models download-vad v6.2.0
-wiz models download-diarization       # pyannote segmentation + 3D-Speaker embedding (~90 MB)
+wiz models download-diarization       # Nemotron (~107 MB) + voice-profile embedding
 ```
 
 ### `wiz config show | edit | set`
@@ -333,12 +333,16 @@ outputs = ["srt", "json"]
 verbose = true
 extra_args = []
 # --- Speaker diarization ---
+diarization_backend = "nemotron" # or "sherpa"
+nemo_speech_cli = "" # PATH or official installation
+nemotron_model = "" # verified downloaded GGUF cache
+nemotron_device = "auto" # auto, cpu, metal
 diarize = false
 num_speakers = 0
-cluster_threshold = 0.9
+cluster_threshold = 0.9 # sherpa only
 diarization_segmentation_model = ""
 diarization_embedding_model = ""
-# sherpa-onnx execution: "cpu" or "coreml", inference threads,
+# sherpa diarization / voice-profile execution: "cpu" or "coreml", threads,
 # and Pyannote window shift (0 < x <= 1; larger = faster, coarser)
 diarization_provider = "cpu"
 diarization_threads = 1
@@ -382,25 +386,29 @@ wiz scans these for `ggml-*.bin` files:
 
 ## Speaker diarization (multi-speaker labels)
 
-wiz can label who spoke when on mono recordings (meetings, screen recordings) via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), which combines a pyannote segmentation model with speaker-embedding clustering.
+wiz detects acoustic speakers automatically with native [Nemotron-3-Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization-GGUF), executed locally by [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp). The fixed `v3-offline` streaming preset supports long episodes. Acoustic clusters are not guaranteed to equal the number of people: changed recording conditions can split one voice. Saved profiles can give separate clusters the same confirmed name.
 
 ### One-time setup
 
-Almost nothing to remember: the first run that needs diarization performs the setup itself — after asking. When diarization is about to run — auto-enabled for a video, or an explicit `--speakers` — and sherpa-onnx or its models are missing, wiz asks on an interactive terminal before touching anything: `Proceed? [y/N]`. Answering `y` installs `sherpa-onnx>=1.13.6` — the exact spec the `diarize` extra declares — into the environment wiz is running in, then downloads the diarization models (~90 MB, one time), with live progress in the terminal. `wiz transcribe recording.mov` on a fresh machine just works. The answer is remembered in the `auto_diarization_setup` config key, so the question is asked once, ever. Non-interactive sessions (piped stdin/stderr — scripts, cron, launchd) proceed without asking so a scripted fresh machine also just works; `wiz config set auto_diarization_setup=false` (or `=true`) answers permanently there too.
-
-Prefer to do it yourself (e.g. before an offline session)? The manual equivalent:
+Install the native runtime using the [official installation guide](https://github.com/NVIDIA/NeMo-Speech.cpp/blob/main/docs/install.md). Keep its full bundle together; the executable requires the accompanying libraries. On Apple Silicon, the tested version is 0.2.0 with Metal:
 
 ```bash
-# 1. Install the optional dependency into wiz's environment
-pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6'
-
-# 2. Download the diarization models (~90 MB total)
+curl -fsSL https://github.com/NVIDIA/NeMo-Speech.cpp/raw/main/scripts/install.sh | sh -s -- --version 0.2.0 --backend metal --binary-only --prefix "$HOME/Library/Application Support/NeMoSpeech"
 wiz models download-diarization
+pipx inject --force transcript-wiz 'sherpa-onnx>=1.13.6' # optional saved-voice recognition
 ```
 
-Opt out with `--no-auto-diarization-setup` on `transcribe`/`merge`/`speakers match`: wiz then skips or degrades speaker labeling (see below) instead of installing anything — and the flag bypasses the prompt entirely. Answer permanently with `wiz config set auto_diarization_setup=false` (decline every future run) or `=true` (never ask, just install). `wiz upgrade` re-injects the diarize extra automatically, so an auto-installed sherpa-onnx survives upgrades.
+Wiz discovers `nemo-speech` on PATH or in the official macOS installation prefix. Set `nemo_speech_cli` or pass `--nemo-speech-cli` for a custom installation. Linux users can use the official CPU/CUDA build and expose its executable on PATH. Use `--nemotron-device cpu` if Metal is unavailable.
+
+The Nemotron download is pinned and checked against its expected size and SHA256 before replacing a cached model. `--nemotron-model` selects an existing GGUF explicitly. On a first run with an installed runtime, Wiz can download a missing model; interactive setup asks once and remembers the answer in `auto_diarization_setup`. Non-interactive setup is allowed unless disabled. The native runtime itself must be installed separately.
+
+Voice recognition uses the existing independent sherpa embedding extractor and profiles. Its optional setup downloads only the embedding model, without Pyannote segmentation. Use `--no-voice-profiles` to skip recognition or `--no-auto-diarization-setup` to disable automatic model downloads and optional package installation. `wiz config set auto_diarization_setup=false` disables setup persistently.
+
+For legacy Pyannote diarization, install the same sherpa extra, then run `wiz models download-diarization --diarization-backend sherpa`. Select that backend explicitly in a command or with `wiz config set diarization_backend=sherpa`.
 
 ### Usage
+
+Nemotron supports automatic counting, not a forced count or clustering threshold. `--speakers N`, `--cluster-threshold` and `--diarization-window-shift` require the sherpa backend. Persisted clustering/window settings apply only to sherpa; provider/thread settings also control voice-profile extraction. Native caches use `*.nemotron.diar.json`, separate from sherpa caches. Changing audio, model/runtime contents, device or preset invalidates them.
 
 For video inputs, diarization is already on by default — `wiz transcribe recording.mov` labels speakers automatically (auto-detect). The examples below show the explicit forms when you want a known count, tuning, or opt-out:
 
@@ -411,23 +419,26 @@ wiz transcribe recording.mov
 # Opt out of diarization for a video
 wiz transcribe --no-speakers recording.mov
 
-# Known speaker count (more accurate — threshold is ignored)
-wiz transcribe --speakers 2 meeting.mp4
+# Podcast: automatic counting, saved names, readable turns beside the MP3
+wiz transcribe episode.mp3 --speakers --outputs txt,html,srt
+
+# Known speaker count requires the sherpa backend
+wiz transcribe --diarization-backend sherpa --speakers 2 meeting.mp4
 
 # Tune clustering threshold when auto-detecting (larger = fewer speakers; default 0.9)
-wiz transcribe --speakers --cluster-threshold 0.95 call.m4a
+wiz transcribe --diarization-backend sherpa --speakers --cluster-threshold 0.95 call.m4a
 
 # Name the speakers interactively after transcription
-wiz transcribe --speakers 4 --name-speakers meeting.mov
+wiz transcribe --speakers --name-speakers meeting.mov
 
-# Faster diarization: use more CPU threads (the default is 1)
-wiz transcribe --speakers 2 --diarization-threads 8 episode.mp3
+# Voice-profile extraction threads (also used by sherpa diarization)
+wiz transcribe --speakers --diarization-threads 8 episode.mp3
 
 # Name speakers non-interactively (assigned by total talk time, most talkative first)
 wiz transcribe recording.mov --speakers-names Alice,Bob,Carol,Dave
 ```
 
-When diarization is about to run but sherpa-onnx or its models aren't set up yet, wiz performs the one-time setup on the spot (see above) — that is the normal path on a fresh machine. The degraded behavior below applies only when the setup **fails** (offline, disk full, ...) or you opted out with `--no-auto-diarization-setup`: an auto-enabled video run then skips speaker labeling with a one-line hint (and still transcribes + captures screenshots) instead of crashing. An explicitly requested `--speakers` degrades with a louder warning. An `--outputs html` **passed on that invocation** is never dropped: when speaker labels are unavailable the HTML transcript is still written, with every cue carrying a generic `Speaker` label and a warning explaining why. (`html` supplied only via config.toml describes the diarized happy path and is not treated as explicit — a degraded run keeps skipping it.) `--speakers-names` / `--name-speakers` are discarded in that case, and the warning says so — the names are never silently dropped. The degraded artifacts never overwrite speaker files an earlier diarized run left next to the media: each existing `.speakers.txt` / `.speakers.html` that carries real speaker labels is kept with a warning instead of being collapsed to generic labels — an earlier run's own degraded (generic-label) files are refreshed in place, so re-running with a different `--model`, `--language`, or audio updates them. When video auto-enables diarization, a `wiz merge` whose only outcome is keeping existing outputs is a no-op success (exit 0). An explicit `--speakers` that produces no real speaker labels exits nonzero, even when it wrote generic-label files or kept named ones.
+Missing native runtimes require the installation above; model and optional profile setup follow the selected setup policy. The degraded behavior below applies only when the setup **fails** (offline, disk full, ...) or you opted out with `--no-auto-diarization-setup`: an auto-enabled video run then skips speaker labeling with a one-line hint (and still transcribes + captures screenshots) instead of crashing. An explicitly requested `--speakers` degrades with a louder warning. An `--outputs html` **passed on that invocation** is never dropped: when speaker labels are unavailable the HTML transcript is still written, with every cue carrying a generic `Speaker` label and a warning explaining why. (`html` supplied only via config.toml describes the diarized happy path and is not treated as explicit — a degraded run keeps skipping it.) `--speakers-names` / `--name-speakers` are discarded in that case, and the warning says so — the names are never silently dropped. The degraded artifacts never overwrite speaker files an earlier diarized run left next to the media: each existing `.speakers.txt` / `.speakers.html` that carries real speaker labels is kept with a warning instead of being collapsed to generic labels — an earlier run's own degraded (generic-label) files are refreshed in place, so re-running with a different `--model`, `--language`, or audio updates them. When video auto-enables diarization, a `wiz merge` whose only outcome is keeping existing outputs is a no-op success (exit 0). An explicit `--speakers` that produces no real speaker labels exits nonzero, even when it wrote generic-label files or kept named ones.
 
 This produces the normal whisper-cli outputs (SRT, JSON) plus two labeled files alongside the input:
 
@@ -448,7 +459,7 @@ Add `html` to `--outputs` (or pass `--outputs html` to `wiz merge`) to write a s
 
 Because the HTML is built from the parsed whisper JSON, `--outputs html` also forces JSON output (`-oj`): an extra `<stem>.json` file remains alongside the input even when you only asked for `html`.
 
-If diarization is unavailable (sherpa-onnx not installed or it produced no segments), an `--outputs html` passed on that invocation is still honored instead of being silently skipped — every cue gets a bare generic `Speaker` label (not the letterized `Speaker A` used for real diarization), and a muted note line at the top of the page records that no diarization ran, so a degraded page is never mistaken for a one-speaker transcript. The labeled `.speakers.srt` is not produced in that case; it requires real diarization. On audio runs a generic-label `.speakers.txt` is still written so `wiz analyze` can find a transcript. Existing speaker outputs from an earlier diarized run are never overwritten — files carrying real speaker labels are kept with a warning rather than collapsed to generic labels, while existing degraded (generic-label) files are refreshed so identical re-runs stay correct.
+If diarization is unavailable (runtime/models missing or it produced no segments), an `--outputs html` passed on that invocation is still honored instead of being silently skipped — every cue gets a bare generic `Speaker` label (not the letterized `Speaker A` used for real diarization), and a muted note line at the top of the page records that no diarization ran, so a degraded page is never mistaken for a one-speaker transcript. The labeled `.speakers.srt` is not produced in that case; it requires real diarization. On audio runs a generic-label `.speakers.txt` is still written so `wiz analyze` can find a transcript. Existing speaker outputs from an earlier diarized run are never overwritten — files carrying real speaker labels are kept with a warning rather than collapsed to generic labels, while existing degraded (generic-label) files are refreshed so identical re-runs stay correct.
 
 SRT exports retain their timed subtitle cues. TXT and HTML use speaker turns for reading, with one timestamp per turn rather than one per transcription fragment.
 
@@ -465,7 +476,7 @@ wiz merge --outputs html recording.mov
 
 The HTML file can be large (one base64-encoded JPEG per segment), but it opens in any browser with no server and no missing images. Speaker colors are assigned deterministically by a hash of the speaker label.
 
-When diarization is on, whisper-cli VAD is disabled (sherpa-onnx handles speech segmentation). If diarization is auto-enabled for a video but unavailable, VAD stays on so you still get a clean transcription.
+When diarization is on, whisper-cli VAD is disabled (the diarization engine handles speech segmentation). If diarization is auto-enabled for a video but unavailable, VAD stays on so you still get a clean transcription.
 
 **Tip:** if you know the speaker count, always pass `--speakers N`. It locks clustering to exactly N speakers and ignores the threshold — this is the single biggest accuracy lever.
 
@@ -504,7 +515,7 @@ wiz merge recording.mov --speakers-names Alice,Bob,Carol,Dave
 <img src="docs/assets/wiz-voices.svg" alt="Name Speaker B as Bob once, and the next recording with the same people is labeled automatically, with no flags." width="100%">
 
 
-When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the same sherpa-onnx embedding extractor used for diarization. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match is at or above `speaker_match_threshold` (default `0.8`).
+When you name a speaker (with `--name-speakers` or `--speakers-names`), wiz can save a **voice profile**: a fixed-size embedding vector for that speaker's audio, computed with the independent sherpa-onnx embedding extractor, unchanged when switching diarization backends. On later recordings, each detected cluster's embedding is compared (cosine similarity) to the stored profiles and a name is auto-assigned when the best match is at or above `speaker_match_threshold` (default `0.8`).
 
 If diarization splits one person's voice into several clusters, wiz matches each cluster independently to the same stored profile. Each cluster takes its best compatible match at or above the threshold; weaker matches keep their generic speaker labels. Automatic matches leave existing profiles unchanged; only confirmed names merge new samples into them.
 
