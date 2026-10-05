@@ -17,7 +17,8 @@ All notable changes to this project are documented here. The format is based on 
 
 - Preserve completed Nemotron diarization when its cache cannot be saved. Report runtime launch failures without decoding errors, accept blank lines in otherwise valid RTTM files, and discover native models in configured search directories.
 - Reuse atomic downloads with model verification. Show runtime setup guidance only when needed, distinguish successful downloads from invalid runtime settings, and display the correct source cache path after audio normalization.
-- Complete optional voice-profile setup before transcription and diarization. Continue with a warning if setup fails, avoid retrying installation after processing, and skip embedding setup and computation when saving is disabled and no profile files exist.
+- Complete optional voice-profile setup before transcription and diarization. Continue with a warning if setup fails, avoid retrying installation after processing, and skip embedding setup and computation when no profiles need matching or saving.
+- Check required voice-profile setup before diarization in `speakers match`, and report original network/download errors during optional setup.
 - Quote native dry-run commands correctly for paths containing spaces and announce verified Nemotron model downloads before they begin.
 
 ## [0.19.0] - 2026-10-04

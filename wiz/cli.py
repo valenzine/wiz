@@ -183,7 +183,14 @@ def _ensure_voice_profiles_ready(config: cfg.Config, *, setup_allowed: bool) -> 
 def _voice_profiles_enabled(args: argparse.Namespace, config: cfg.Config) -> bool:
     """Use embeddings only when profiles can be matched or saved."""
     return not getattr(args, "no_voice_profiles", False) and (
-        config.save_voice_profiles or any(P.profiles_dir().glob("*.json"))
+        (
+            config.save_voice_profiles
+            and (
+                _name_speakers_enabled(args, diarize_enabled=True)
+                or bool(getattr(args, "speakers_names", None))
+            )
+        )
+        or any(P.profiles_dir().glob("*.json"))
     )
 
 
@@ -195,9 +202,11 @@ def _prepare_voice_profiles(args: argparse.Namespace, config: cfg.Config) -> Non
         _ensure_voice_profiles_ready(
             config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
         )
-    except Exception:  # noqa: BLE001
+    except RuntimeError:
         # The profile stage checks readiness without setup and reports skipped matching.
         pass
+    except Exception as e:  # noqa: BLE001
+        ui.status(f"Warning: voice-profile setup failed: {e}", kind="warn")
 
 
 def _outputs_include(args: argparse.Namespace, config: cfg.Config, fmt: str) -> bool:
@@ -1572,7 +1581,7 @@ def _cmd_transcribe_prepared(
                 except Exception as e:  # noqa: BLE001
                     ui.status(f"Warning: voice-profile matching skipped: {e}", kind="warn")
             else:
-                timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no stored profiles; saving disabled")
+                timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no matching or saving needed")
             # Frames must be extracted before writing HTML so they can be
             # inlined; for the diarized path we extract after the labeled
             # outputs but before HTML if both are requested.
@@ -2449,7 +2458,7 @@ def _cmd_merge_prepared(
         except Exception as e:  # noqa: BLE001
             ui.status(f"Warning: voice-profile matching skipped: {e}", kind="warn")
     elif merged or args.no_voice_profiles:
-        timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no stored profiles; saving disabled")
+        timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no matching or saving needed")
 
     written: list[str] = []
     kept_outputs: list[Path] = []
@@ -2655,6 +2664,11 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
             "Diarization unavailable (runtime or models missing, setup failed or opted out).\n"
             f"Run manually: {_diarization_setup_hint(config)}"
         )
+    # Matching needs the embedding extractor: settle its setup before diarizing.
+    if any(P.profiles_dir().glob("*.json")):
+        _ensure_voice_profiles_ready(
+            config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
+        )
 
     diarization_source = wav
     normalized_for_diarization = False
@@ -2689,7 +2703,7 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
         with timings.measure("Speaker profiles"):
             profiles = P.load_profiles()
             if profiles:
-                _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
+                _ensure_voice_profiles_ready(config, setup_allowed=False)
                 cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                 matches = P.match_speakers(
                     cluster_embeddings, profiles, threshold=config.speaker_match_threshold,
