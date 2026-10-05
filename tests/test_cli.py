@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+import urllib.error
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -2352,7 +2353,9 @@ def test_speakers_match_prepares_profiles_before_normalization_and_diarization(
     assert events.count("profiles:False") == 1
 
 
-def test_speakers_match_profile_setup_failure_prevents_expensive_work(tmp_path, monkeypatch):
+def test_speakers_match_profile_setup_oserror_becomes_runtime_error_before_expensive_work(
+    tmp_path, monkeypatch
+):
     audio = tmp_path / "meeting.mp3"
     audio.write_bytes(b"fake audio")
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(diarization_backend="sherpa"))
@@ -2379,8 +2382,9 @@ def test_speakers_match_profile_setup_failure_prevents_expensive_work(tmp_path, 
         file=str(audio), speakers=1, cluster_threshold=None,
         no_auto_diarization_setup=False,
     )
-    with pytest.raises(OSError, match="embedding network failure"):
+    with pytest.raises(RuntimeError, match="embedding network failure") as excinfo:
         cli.cmd_speakers_match(args)
+    assert isinstance(excinfo.value.__cause__, OSError)
 
 
 def test_speakers_match_video_diarization_setup_failure_skips_extraction(tmp_path, monkeypatch):
@@ -2402,9 +2406,15 @@ def test_speakers_match_video_diarization_setup_failure_skips_extraction(tmp_pat
         cli.cmd_speakers_match(args)
 
 
-@pytest.mark.parametrize("failure", [RuntimeError("profile setup declined"), OSError("profile download failed")])
+@pytest.mark.parametrize(
+    ("failure", "expected_exception"),
+    [
+        (RuntimeError("profile setup declined"), RuntimeError),
+        (OSError("profile download failed"), RuntimeError),
+    ],
+)
 def test_speakers_match_video_profile_setup_failure_skips_extraction(
-    tmp_path, monkeypatch, failure
+    tmp_path, monkeypatch, failure, expected_exception
 ):
     video = tmp_path / "meeting.mov"
     video.write_bytes(b"fake video")
@@ -2427,8 +2437,83 @@ def test_speakers_match_video_profile_setup_failure_skips_extraction(
         file=str(video), speakers=1, cluster_threshold=None,
         no_auto_diarization_setup=False,
     )
-    with pytest.raises(type(failure), match=str(failure)):
+    with pytest.raises(expected_exception, match=str(failure)) as excinfo:
         cli.cmd_speakers_match(args)
+    if isinstance(failure, OSError):
+        assert excinfo.value.__cause__ is failure
+
+
+@pytest.mark.parametrize("failure_stage", ["preflight", "late"])
+def test_main_speakers_match_profile_urlerror_is_clean_and_does_not_retry_setup(
+    tmp_path, monkeypatch, capsys, failure_stage
+):
+    audio = tmp_path / "meeting.mp3"
+    audio.write_bytes(b"fake audio")
+    wav = tmp_path / "meeting.wav"
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    monkeypatch.setattr(cli.cfg, "migrate_legacy_dirs", lambda: [])
+    monkeypatch.setattr(cli.ui, "status", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli.ui, "table", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli.ui, "kv", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli.ui, "phase", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli.ui, "muted", lambda *_a, **_k: None)
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0], samples=1)
+    monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *_a, **_k: True)
+    readiness_calls: list[bool] = []
+
+    def fail_at_requested_readiness_stage(_config, *, setup_allowed):
+        readiness_calls.append(setup_allowed)
+        if (failure_stage == "preflight" and setup_allowed) or (
+            failure_stage == "late" and not setup_allowed
+        ):
+            if failure_stage == "preflight":
+                raise urllib.error.URLError("network unavailable")
+            raise OSError("sherpa-onnx extension unavailable")
+
+    monkeypatch.setattr(cli, "_ensure_voice_profiles_ready", fail_at_requested_readiness_stage)
+
+    if failure_stage == "preflight":
+        monkeypatch.setattr(
+            cli.aud,
+            "prepare_diarization_audio",
+            lambda *_a, **_k: pytest.fail("normalization must not run after setup failure"),
+        )
+        monkeypatch.setattr(
+            cli.D,
+            "run_diarization",
+            lambda *_a, **_k: pytest.fail("diarization must not run after setup failure"),
+        )
+    else:
+        monkeypatch.setattr(cli.aud, "find_ffmpeg", lambda _configured="": "ffmpeg")
+
+        def prepare_audio(source, *_a, **_k):
+            wav.write_bytes(b"normalized wav")
+            return wav
+
+        monkeypatch.setattr(cli.aud, "prepare_diarization_audio", prepare_audio)
+        monkeypatch.setattr(
+            cli.D,
+            "run_diarization",
+            lambda *_a, **_k: [DiarSegment(start=0.0, end=3.0, speaker=0)],
+        )
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["speakers", "match", str(audio)])
+
+    assert excinfo.value.code == 1
+    error_lines = [line for line in capsys.readouterr().err.splitlines() if line.strip()]
+    assert len(error_lines) == 1
+    cause = (
+        "network unavailable"
+        if failure_stage == "preflight"
+        else "sherpa-onnx extension unavailable"
+    )
+    assert cause in error_lines[0]
+    assert "Traceback" not in error_lines[0]
+    assert readiness_calls == ([True] if failure_stage == "preflight" else [True, False])
+    assert not wav.exists()
 
 
 def test_speakers_match_video_extracts_after_setup_and_matches_profiles(

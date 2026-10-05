@@ -2617,6 +2617,8 @@ def cmd_speakers_match(args: argparse.Namespace) -> int:
     timings = _StageTimings()
     try:
         return _cmd_speakers_match_prepared(args, timings)
+    except OSError as e:
+        raise RuntimeError(f"Speaker matching failed: {e}") from e
     finally:
         if timings.has_activity():
             timings.render(time.perf_counter() - wall_started)

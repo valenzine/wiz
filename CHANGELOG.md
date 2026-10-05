@@ -19,6 +19,7 @@ All notable changes to this project are documented here. The format is based on 
 - Reuse atomic downloads with model verification. Show runtime setup guidance only when needed, distinguish successful downloads from invalid runtime settings, and display the correct source cache path after audio normalization.
 - Complete optional voice-profile setup before transcription and diarization. Continue with a warning if setup fails, avoid retrying installation after processing, and skip embedding setup and computation when no profiles need matching or saving.
 - Check required diarization and voice-profile setup before audio extraction in `speakers match`, and report original network/download errors during optional setup.
+- Report speaker-matching I/O failures as concise CLI errors with their original causes.
 - Quote native dry-run commands correctly for paths containing spaces and announce verified Nemotron model downloads before they begin.
 
 ## [0.19.0] - 2026-10-04
