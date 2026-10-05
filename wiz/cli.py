@@ -2638,6 +2638,22 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
     in_path = Path(args.file).expanduser()
     if not in_path.exists():
         raise SystemExit(f"Input file not found: {in_path}")
+    # Proactive-first: this command needs diarization by definition; attempt
+    # the one-time setup before failing (unless the caller opts out).
+    if not _ensure_diarization_ready(
+        config,
+        dry_run=False,
+        setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
+    ):
+        raise SystemExit(
+            "Diarization unavailable (runtime or models missing, setup failed or opted out).\n"
+            f"Run manually: {_diarization_setup_hint(config)}"
+        )
+    # Matching needs the embedding extractor: settle its setup before any audio work.
+    if any(P.profiles_dir().glob("*.json")):
+        _ensure_voice_profiles_ready(
+            config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
+        )
     if aud.is_audio(in_path):
         wav = in_path
     elif aud.needs_extraction(in_path):
@@ -2653,22 +2669,6 @@ def _cmd_speakers_match_prepared(args: argparse.Namespace, timings: _StageTiming
 
     num_sp = args.speakers if args.speakers else 0
     thr = _diarization_threshold(args, config)
-    # Proactive-first: this command needs diarization by definition; attempt
-    # the one-time setup before failing (unless the caller opts out).
-    if not _ensure_diarization_ready(
-        config,
-        dry_run=False,
-        setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
-    ):
-        raise SystemExit(
-            "Diarization unavailable (runtime or models missing, setup failed or opted out).\n"
-            f"Run manually: {_diarization_setup_hint(config)}"
-        )
-    # Matching needs the embedding extractor: settle its setup before diarizing.
-    if any(P.profiles_dir().glob("*.json")):
-        _ensure_voice_profiles_ready(
-            config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
-        )
 
     diarization_source = wav
     normalized_for_diarization = False

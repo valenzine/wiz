@@ -2383,6 +2383,102 @@ def test_speakers_match_profile_setup_failure_prevents_expensive_work(tmp_path, 
         cli.cmd_speakers_match(args)
 
 
+def test_speakers_match_video_diarization_setup_failure_skips_extraction(tmp_path, monkeypatch):
+    video = tmp_path / "meeting.mov"
+    video.write_bytes(b"fake video")
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(diarization_backend="sherpa"))
+    monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        cli.aud,
+        "extract_audio",
+        lambda *_a, **_k: pytest.fail("video extraction must wait for diarization setup"),
+    )
+
+    args = SimpleNamespace(
+        file=str(video), speakers=1, cluster_threshold=None,
+        no_auto_diarization_setup=False,
+    )
+    with pytest.raises(SystemExit, match="Diarization unavailable"):
+        cli.cmd_speakers_match(args)
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("profile setup declined"), OSError("profile download failed")])
+def test_speakers_match_video_profile_setup_failure_skips_extraction(
+    tmp_path, monkeypatch, failure
+):
+    video = tmp_path / "meeting.mov"
+    video.write_bytes(b"fake video")
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(diarization_backend="sherpa"))
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0], samples=1)
+    monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: (_ for _ in ()).throw(failure),
+    )
+    monkeypatch.setattr(
+        cli.aud,
+        "extract_audio",
+        lambda *_a, **_k: pytest.fail("video extraction must wait for profile setup"),
+    )
+
+    args = SimpleNamespace(
+        file=str(video), speakers=1, cluster_threshold=None,
+        no_auto_diarization_setup=False,
+    )
+    with pytest.raises(type(failure), match=str(failure)):
+        cli.cmd_speakers_match(args)
+
+
+def test_speakers_match_video_extracts_after_setup_and_matches_profiles(
+    tmp_path, monkeypatch
+):
+    video = tmp_path / "meeting.mov"
+    video.write_bytes(b"fake video")
+    wav = tmp_path / "meeting.wav"
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0], samples=1)
+    events: list[str] = []
+    monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda _config, *, setup_allowed: events.append(f"profiles:{setup_allowed}"),
+    )
+    monkeypatch.setattr(cli.aud, "find_ffmpeg", lambda _configured="": "ffmpeg")
+
+    def extract(source, _ffmpeg, dest_dir=None, dry_run=False, output=None):
+        assert source == video
+        events.append("extraction")
+        _write_pcm_wav(wav)
+        return wav
+
+    monkeypatch.setattr(cli.aud, "extract_audio", extract)
+    monkeypatch.setattr(
+        cli.D,
+        "run_diarization",
+        lambda *_a, **_k: events.append("diarization")
+        or [DiarSegment(start=0.0, end=3.0, speaker=0)],
+    )
+    monkeypatch.setattr(cli.P, "compute_speaker_embeddings", lambda *_a: {0: [1.0]})
+    tables: list[tuple[str | None, list[list[str]]]] = []
+    monkeypatch.setattr(cli.ui, "table", lambda title, _columns, rows: tables.append((title, rows)))
+
+    args = SimpleNamespace(
+        file=str(video), speakers=1, cluster_threshold=None,
+        no_auto_diarization_setup=False,
+    )
+    assert cli.cmd_speakers_match(args) == 0
+    assert events.index("profiles:True") < events.index("extraction") < events.index("diarization")
+    assert events.count("profiles:True") == 1
+    assert events.count("profiles:False") == 1
+    rows = next(rows for title, rows in tables if title == "Speaker match (dry run)")
+    assert rows[0][1] == "Alice"
+
+
 def test_speakers_match_mp3_normalizes_for_diarization_then_cleans(tmp_path, monkeypatch):
     audio = tmp_path / "meeting.mp3"
     audio.write_bytes(b"fake audio")
