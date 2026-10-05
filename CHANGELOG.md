@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] - 2026-10-04
+
+### Changed
+
+- Use native Nemotron automatic speaker diarization by default on `transcribe`, `merge` and `speakers match`, with the long-recording `v3-offline` preset. Preserve saved-speaker recognition and readable dialogue exports.
+- Retain sherpa diarization through `--diarization-backend sherpa` for explicit speaker counts and clustering controls. Reject unsupported native options with guidance.
+
+### Added
+
+- Native runtime/model/device configuration, verified model downloads and a separate diarization cache that records the input, model, runtime libraries, device and preset. Document NeMo-Speech.cpp installation and podcast transcription.
+
+### Fixed
+
+- Preserve completed Nemotron diarization when its cache cannot be saved. Report runtime launch failures without decoding errors, accept blank lines in otherwise valid RTTM files, and discover native models in configured search directories.
+- Reuse atomic downloads with model verification. Show runtime setup guidance only when needed, distinguish successful downloads from invalid runtime settings, and display the correct source cache path after audio normalization.
+- Complete optional voice-profile setup before transcription and diarization. Continue with a warning if setup fails, avoid retrying installation after processing, and skip embedding setup and computation when no profiles need matching or saving.
+- Check required diarization and voice-profile setup before audio extraction in `speakers match`, and report original network/download errors during optional setup.
+- Report speaker-matching I/O failures as concise CLI errors with their original causes.
+- Quote native dry-run commands correctly for paths containing spaces and announce verified Nemotron model downloads before they begin.
+
 ## [0.19.0] - 2026-10-04
 
 ### Changed

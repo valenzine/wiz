@@ -55,7 +55,9 @@ def test_diarization_passes_settings_to_both_models(
     )
     monkeypatch.setattr(D, "_import_sherpa", lambda: fake)
 
-    config = cfg.Config(diarization_provider=provider, diarization_threads=threads)
+    config = cfg.Config(
+        diarization_backend="sherpa", diarization_provider=provider, diarization_threads=threads,
+    )
     assert D.run_diarization(tmp_path / "episode.wav", config, use_cache=False) == []
     assert seen["segmentation"]["provider"] == provider
     assert seen["segmentation"]["num_threads"] == threads
@@ -210,7 +212,7 @@ def test_cli_overrides_persistent_execution_settings(tmp_path, monkeypatch, comm
     source.write_bytes(b"wav")
     prefix = ["speakers", "match"] if command == "match" else [command]
     args = cli.build_parser().parse_args(
-        prefix + [str(source), "--speakers", "2", "--diarization-provider", "coreml",
+        prefix + [str(source), "--diarization-backend", "sherpa", "--speakers", "2", "--diarization-provider", "coreml",
                   "--diarization-threads", "8"]
     )
 
@@ -238,7 +240,9 @@ def test_cli_uses_persistent_execution_settings_without_overrides(tmp_path, monk
     source = tmp_path / "episode.wav"
     source.write_bytes(b"wav")
     prefix = ["speakers", "match"] if command == "match" else [command]
-    args = cli.build_parser().parse_args(prefix + [str(source), "--speakers", "2"])
+    args = cli.build_parser().parse_args(
+        prefix + [str(source), "--diarization-backend", "sherpa", "--speakers", "2"],
+    )
 
     class Captured(Exception):
         pass
@@ -278,7 +282,9 @@ def test_invalid_cli_execution_settings_are_rejected(option, value, capsys):
 )
 def test_invalid_persistent_execution_settings_are_rejected(tmp_path, monkeypatch, line, key):
     monkeypatch.setattr(cfg, "CONFIG_PATH", tmp_path / "config.toml")
-    (tmp_path / "config.toml").write_text(line, encoding="utf-8")
+    (tmp_path / "config.toml").write_text(
+        'diarization_backend = "sherpa"\n' + line, encoding="utf-8",
+    )
     with pytest.raises(RuntimeError, match=key):
         D.run_diarization(tmp_path / "episode.wav", cfg.load())
 
@@ -319,7 +325,9 @@ def test_explicit_provider_initialization_failure_names_provider(tmp_path, monke
     with pytest.raises(RuntimeError, match="coreml.*CoreML session unavailable") as exc:
         D.run_diarization(
             tmp_path / "episode.wav",
-            cfg.Config(diarization_provider="coreml", diarization_threads=8),
+            cfg.Config(
+                diarization_backend="sherpa", diarization_provider="coreml", diarization_threads=8,
+            ),
             use_cache=False,
         )
     assert not isinstance(exc.value, D.DiarizationUnavailable)
@@ -339,7 +347,9 @@ def test_execution_settings_do_not_invalidate_diarization_cache(tmp_path, monkey
     monkeypatch.setattr(D, "find_embedding_model", lambda _config: model)
     monkeypatch.setattr(D, "_import_sherpa", lambda: pytest.fail("cache should avoid inference"))
     result = D.run_diarization(
-        wav, cfg.Config(diarization_provider="coreml", diarization_threads=8),
+        wav, cfg.Config(
+            diarization_backend="sherpa", diarization_provider="coreml", diarization_threads=8,
+        ),
         num_speakers=2, threshold=0.9,
     )
     assert result == segments
@@ -378,7 +388,7 @@ def test_normalized_audio_reuses_cache_keyed_on_compressed_source(tmp_path, monk
     )
     monkeypatch.setattr(D, "_import_sherpa", lambda: fake)
 
-    config = cfg.Config()
+    config = cfg.Config(diarization_backend="sherpa")
     assert D.run_diarization(first_wav, config, num_speakers=2, threshold=0.9,
                              cache_source=source) == segments
     cache = D.diar_cache_path(source)
@@ -440,7 +450,9 @@ def test_window_shift_defaults_to_0_2_and_is_always_passed(tmp_path, monkeypatch
     model, _ = _window_shift_sherpa(
         tmp_path, monkeypatch, lambda *a, **k: seen.append((a, k)) or object(),
     )
-    D.run_diarization(tmp_path / "episode.wav", cfg.Config(), use_cache=False)
+    D.run_diarization(
+        tmp_path / "episode.wav", cfg.Config(diarization_backend="sherpa"), use_cache=False,
+    )
     assert seen == [((), {"model": str(model), "window_shift_ratio": 0.2})]
 
 
@@ -450,7 +462,8 @@ def test_window_shift_reaches_pyannote_config(tmp_path, monkeypatch):
         tmp_path, monkeypatch, lambda *a, **k: seen.append((a, k)) or object(),
     )
     D.run_diarization(
-        tmp_path / "episode.wav", cfg.Config(diarization_window_shift=0.35), use_cache=False,
+        tmp_path / "episode.wav",
+        cfg.Config(diarization_backend="sherpa", diarization_window_shift=0.35), use_cache=False,
     )
     assert seen == [((), {"model": str(model), "window_shift_ratio": 0.35})]
 
@@ -461,7 +474,9 @@ def test_too_old_sherpa_says_how_to_upgrade(tmp_path, monkeypatch):
 
     _window_shift_sherpa(tmp_path, monkeypatch, old_pyannote)
     with pytest.raises(D.DiarizationUnavailable, match=r"1\.13\.6.*pipx inject --force transcript-wiz 'sherpa-onnx>=1\.13\.6'"):
-        D.run_diarization(tmp_path / "episode.wav", cfg.Config(), use_cache=False)
+        D.run_diarization(
+            tmp_path / "episode.wav", cfg.Config(diarization_backend="sherpa"), use_cache=False,
+        )
 
 
 @pytest.mark.parametrize("command", ["transcribe", "merge", "match"])
@@ -472,7 +487,9 @@ def test_cli_window_shift_overrides_config(tmp_path, monkeypatch, command, cli_v
     source = tmp_path / "episode.wav"
     source.write_bytes(b"wav")
     prefix = ["speakers", "match"] if command == "match" else [command]
-    args = cli.build_parser().parse_args(prefix + [str(source), "--speakers", "2"] + cli_value)
+    args = cli.build_parser().parse_args(
+        prefix + [str(source), "--diarization-backend", "sherpa", "--speakers", "2"] + cli_value,
+    )
 
     class Captured(Exception):
         pass
@@ -506,7 +523,9 @@ def test_invalid_cli_window_shift_is_rejected(command, value, capsys):
 @pytest.mark.parametrize("value", ["0", "-0.1", "1.1"])
 def test_invalid_persistent_window_shift_is_rejected(tmp_path, monkeypatch, value):
     monkeypatch.setattr(cfg, "CONFIG_PATH", tmp_path / "config.toml")
-    (tmp_path / "config.toml").write_text(f"diarization_window_shift = {value}\n", encoding="utf-8")
+    (tmp_path / "config.toml").write_text(
+        f'diarization_backend = "sherpa"\ndiarization_window_shift = {value}\n', encoding="utf-8",
+    )
     with pytest.raises(RuntimeError, match="diarization_window_shift"):
         D.run_diarization(tmp_path / "episode.wav", cfg.load())
 
@@ -527,7 +546,8 @@ def test_dry_run_shows_window_shift(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(D, "find_segmentation_model", lambda _config: model)
     monkeypatch.setattr(D, "find_embedding_model", lambda _config: model)
     D.run_diarization(
-        tmp_path / "episode.wav", cfg.Config(diarization_window_shift=0.2), dry_run=True,
+        tmp_path / "episode.wav",
+        cfg.Config(diarization_backend="sherpa", diarization_window_shift=0.2), dry_run=True,
     )
     assert "window shift ratio: 0.2" in capsys.readouterr().out
 
@@ -544,7 +564,7 @@ def test_window_shift_is_part_of_cache_key(tmp_path, monkeypatch):
 
     def run(shift):
         return D.run_diarization(
-            wav, cfg.Config(diarization_window_shift=shift),
+            wav, cfg.Config(diarization_backend="sherpa", diarization_window_shift=shift),
             num_speakers=2, threshold=0.9, cache_source=source,
         )
 

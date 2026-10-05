@@ -10,9 +10,11 @@ model files, downloads them if needed, and returns structured segments.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tarfile
+import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,6 +147,37 @@ def _download(url: str, target: Path) -> None:
             shutil.copyfileobj(resp, fh, length=1024 * 1024)
 
 
+def _download_atomic(url: str, target: Path, verify=None) -> None:
+    """Download to a sibling temporary file, then replace ``target``.
+
+    ``verify`` receives the temporary path and raises to reject the download.
+    """
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".download", dir=target.parent,
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        _download(url, temporary)
+        if verify is not None:
+            verify(temporary)
+        temporary.replace(target)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def download_embedding_model(dest_dir: Path | None = None) -> Path:
+    """Download only the voice-embedding model used by profile extraction."""
+    base = dest_dir or _default_diarization_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    target = base / EMB_MODEL_FILE
+    if target.is_file():
+        return target
+    _download_atomic(EMB_URL, target)
+    return target
+
+
 def download_diarization_models(dest_dir: Path | None = None) -> tuple[Path, Path]:
     """Download segmentation (tar.bz2, extracted) and embedding models."""
     base = dest_dir or _default_diarization_dir()
@@ -171,7 +204,7 @@ def download_diarization_models(dest_dir: Path | None = None) -> tuple[Path, Pat
     emb_path = base / EMB_MODEL_FILE
     if not emb_path.exists():
         print(f"Downloading embedding model from {EMB_URL} ...", flush=True)
-        _download(EMB_URL, emb_path)
+        emb_path = download_embedding_model(base)
 
     print(
         f"Diarization models ready:\n  segmentation: {seg_path}\n  embedding:    {emb_path}",
@@ -300,12 +333,12 @@ def run_diarization(
     wav: Path,
     config: cfg.Config,
     num_speakers: int = 0,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     dry_run: bool = False,
     use_cache: bool = True,
     cache_source: Path | None = None,
 ) -> list[DiarSegment]:
-    """Run sherpa-onnx diarization on a 16kHz mono WAV.
+    """Run the configured diarization backend on a 16kHz mono WAV.
 
     Returns parsed segments sorted by start time. If dry_run, returns []
     and prints what would run.
@@ -320,6 +353,31 @@ def run_diarization(
     is a temporary normalized inference file.  It defaults to ``wav`` to
     retain the established behavior for direct WAV callers.
     """
+    backend = config.diarization_backend
+    if backend not in cfg.DIARIZATION_BACKENDS:
+        raise DiarizationUnavailable(
+            f"Invalid diarization_backend={backend!r}. Choose: {', '.join(sorted(cfg.DIARIZATION_BACKENDS))}"
+        )
+    if backend == "nemotron":
+        if num_speakers > 0:
+            raise ValueError(
+                "Nemotron chooses speaker count automatically; use diarization_backend=sherpa "
+                "to force --speakers."
+            )
+        if threshold is not None:
+            raise ValueError(
+                "Nemotron does not support cluster threshold tuning; use diarization_backend=sherpa."
+            )
+        from wiz import nemotron
+
+        return nemotron.run(
+            wav, config, dry_run=dry_run, use_cache=use_cache, cache_source=cache_source,
+        )
+
+    # The legacy public call omitted threshold. Preserve its established
+    # sherpa default while reserving None to mean no native tuning was asked.
+    if threshold is None:
+        threshold = 0.5
     cfg.validate_diarization_execution_settings(config)
 
     # Resolve the models BEFORE the cache check (H1): the cache key now

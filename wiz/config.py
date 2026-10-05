@@ -122,7 +122,11 @@ class Config:
     verbose: bool = True
     # Additional flags passed verbatim to whisper-cli.
     extra_args: list[str] = field(default_factory=list)
-    # --- Diarization (sherpa-onnx) ---
+    # --- Diarization ---
+    diarization_backend: str = "nemotron"
+    nemo_speech_cli: str = ""
+    nemotron_model: str = ""
+    nemotron_device: str = "auto"
     # Enable speaker diarization by default.
     diarize: bool = False
     # Known number of speakers (0 => auto-detect via cluster_threshold).
@@ -260,6 +264,8 @@ def load() -> Config:
     return Config()
 
 
+DIARIZATION_BACKENDS = frozenset({"nemotron", "sherpa"})
+NEMOTRON_DEVICES = frozenset({"auto", "cpu", "metal"})
 DIARIZATION_PROVIDERS = frozenset({"cpu", "coreml"})
 
 
