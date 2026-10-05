@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -37,7 +38,7 @@ def _default_model_path() -> Path:
 
 def find_runtime(config: cfg.Config) -> Path | None:
     """Return the configured native executable, without accepting a bad override."""
-    configured = getattr(config, "nemo_speech_cli", "")
+    configured = config.nemo_speech_cli
     if configured:
         path = Path(configured).expanduser()
         if path.is_file() and os.access(path, os.X_OK):
@@ -60,7 +61,7 @@ def find_runtime(config: cfg.Config) -> Path | None:
 
 def find_model(config: cfg.Config) -> Path | None:
     """Return the configured model, without falling back from a bad override."""
-    configured = getattr(config, "nemotron_model", "")
+    configured = config.nemotron_model
     if configured:
         path = Path(configured).expanduser()
         if path.is_file():
@@ -103,6 +104,8 @@ def download_model(dest_dir: Path | None = None) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_file() and target.stat().st_size == MODEL_SIZE and _sha256(target) == MODEL_SHA256:
         return target
+
+    print(f"Downloading Nemotron model (~{MODEL_SIZE // 1_000_000} MB) from {MODEL_URL} ...", flush=True)
 
     def verify(downloaded: Path) -> None:
         if downloaded.stat().st_size != MODEL_SIZE or _sha256(downloaded) != MODEL_SHA256:
@@ -286,7 +289,7 @@ def run(
             raise DiarizationUnavailable(
                 "Nemotron model not found. Run `wiz models download-diarization` first."
             )
-    device = getattr(config, "nemotron_device", "auto") or "auto"
+    device = config.nemotron_device
     if device not in cfg.NEMOTRON_DEVICES:
         raise DiarizationUnavailable(
             f"Invalid nemotron_device={device!r}. Choose: {', '.join(sorted(cfg.NEMOTRON_DEVICES))}"
@@ -295,20 +298,19 @@ def run(
                       "--preset", PRESET, "--format", "rttm"]
     if dry_run:
         print("DRY-RUN Nemotron diarization:")
-        print("  command: " + " ".join(command_prefix + ["--output", "RESULT.rttm"]))
+        print("  command: " + shlex.join(command_prefix + ["--output", "RESULT.rttm"]))
         return []
 
     _validate_wav(wav)
     source = cache_source or wav
     identity = _cache_identity(source, runtime, model, device)
+    from wiz import ui
     if use_cache:
         cached = _load_cache(source, identity)
         if cached is not None:
-            from wiz import ui
             ui.muted(f"Reusing Nemotron diarization cache ({len(cached)} segments): {cache_path(source)}")
             return cached
 
-    from wiz import ui
     ui.phase("diarizing with Nemotron")
     ui.muted(f"  device: {device}")
     ui.muted(f"  preset: {PRESET}")

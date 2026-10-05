@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import hashlib
 import json
 import os
+import shlex
 import wave
 
 import pytest
@@ -189,10 +190,16 @@ def test_dispatcher_rejects_an_unknown_backend_before_sherpa_setup(tmp_path, mon
 
 
 def test_native_dry_run_needs_setup_but_not_a_real_wav(tmp_path, monkeypatch, capsys):
-    _ready(tmp_path, monkeypatch)
-    assert D.run_diarization(tmp_path / "temporary-does-not-exist.wav", _config(), dry_run=True) == []
+    runtime, model = _ready(tmp_path / "runtime with spaces", monkeypatch)
+    wav = tmp_path / "temporary audio does not exist.wav"
+    assert D.run_diarization(wav, _config(), dry_run=True) == []
     text = capsys.readouterr().out
     assert "--preset v3-offline --format rttm" in text
+    command = text.split("  command: ", 1)[1].strip()
+    argv = shlex.split(command)
+    assert argv[0] == str(runtime)
+    assert argv[2] == str(wav)
+    assert argv[argv.index("--model") + 1] == str(model)
 
 
 def test_native_dry_run_does_not_download_a_missing_model(tmp_path, monkeypatch, capsys):

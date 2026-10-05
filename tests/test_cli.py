@@ -960,6 +960,228 @@ def _stub_setup_ready(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("case", ["dry-run", "no-speakers", "profiles-disabled"])
+def test_transcribe_skips_profile_preflight_when_profiles_cannot_run(
+    tmp_path, monkeypatch, case
+):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    monkeypatch.setattr(cli, "_ensure_diarization_ready", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: pytest.fail("voice-profile setup must not run"),
+    )
+    monkeypatch.setattr(cli.M, "pick_best", lambda _config: Path("/models/turbo.bin"))
+    monkeypatch.setattr(cli, "_find_whisper_cli", lambda _configured="": "whisper-cli")
+
+    args = _transcribe_args(audio, outputs="srt", speakers=1)
+    args.no_voice_profiles = False
+    if case == "dry-run":
+        args.dry_run = True
+    elif case == "no-speakers":
+        args.speakers = None
+    else:
+        args.no_voice_profiles = True
+
+    cli._build_transcribe_args(args, config)
+
+
+def test_transcribe_missing_input_skips_profile_preflight(tmp_path, monkeypatch):
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    args = _transcribe_args(tmp_path / "missing.wav", outputs="srt", speakers=1)
+    args.no_voice_profiles = False
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: pytest.fail("voice-profile setup must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="Input file not found"):
+        cli._build_transcribe_args(args, config)
+
+
+def test_merge_missing_json_skips_profile_preflight(tmp_path, monkeypatch):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(diarization_backend="sherpa"))
+    _stub_setup_ready(monkeypatch)
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: pytest.fail("voice-profile setup must wait for whisper JSON"),
+    )
+    args = _merge_args(audio, outputs="srt", speakers=1)
+    args.no_voice_profiles = False
+
+    with pytest.raises(SystemExit, match="No whisper JSON found"):
+        cli.cmd_merge(args)
+
+
+def test_transcribe_optional_profile_preflight_oserror_does_not_retry_setup(
+    tmp_path, monkeypatch
+):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    (tmp_path / "meeting.wav.json").write_text(_WHISPER_JSON, encoding="utf-8")
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    _prepare_diarization_build(monkeypatch)
+    monkeypatch.setattr(cli, "_run_whisper_streaming", lambda _cmd: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(
+        cli.D,
+        "run_diarization",
+        lambda *_a, **_k: [DiarSegment(start=0.0, end=3.0, speaker=0)],
+    )
+    setup_flags: list[bool] = []
+
+    def profile_setup(_config, *, setup_allowed):
+        setup_flags.append(setup_allowed)
+        if setup_allowed:
+            raise OSError("embedding download interrupted")
+
+    monkeypatch.setattr(cli, "_ensure_voice_profiles_ready", profile_setup)
+    monkeypatch.setattr(cli.P, "compute_speaker_embeddings", lambda *_a: {})
+    args = _transcribe_args(audio, outputs="srt", speakers=1)
+    args.no_voice_profiles = False
+
+    assert cli.cmd_transcribe(args) == 0
+    assert setup_flags == [True, False]
+
+
+@pytest.mark.parametrize("command", ["transcribe", "merge"])
+def test_profile_preflight_precedes_diarization_without_late_setup_retry(
+    tmp_path, monkeypatch, command
+):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    (tmp_path / "meeting.wav.json").write_text(_WHISPER_JSON, encoding="utf-8")
+    config = cli.cfg.Config(diarization_backend="sherpa")
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    events: list[str] = []
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda _config, *, setup_allowed: events.append(f"profiles:{setup_allowed}"),
+    )
+    monkeypatch.setattr(cli.P, "compute_speaker_embeddings", lambda *_a: {})
+    monkeypatch.setattr(
+        cli.D,
+        "run_diarization",
+        lambda *_a, **_k: events.append("diarization")
+        or [DiarSegment(start=0.0, end=3.0, speaker=0)],
+    )
+
+    if command == "transcribe":
+        _prepare_diarization_build(monkeypatch)
+        monkeypatch.setattr(
+            cli,
+            "_run_whisper_streaming",
+            lambda _cmd: events.append("transcription") or SimpleNamespace(returncode=0),
+        )
+        args = _transcribe_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_transcribe(args) == 0
+        assert events.index("profiles:True") < events.index("diarization") < events.index("transcription")
+    else:
+        _stub_setup_ready(monkeypatch)
+        args = _merge_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_merge(args) == 0
+        assert events.index("profiles:True") < events.index("diarization")
+
+    assert events.count("profiles:True") == 1
+    assert events.count("profiles:False") == 1
+
+
+@pytest.mark.parametrize("command", ["transcribe", "merge"])
+def test_profiles_skip_setup_and_embeddings_when_saving_is_disabled_without_profiles(
+    tmp_path, monkeypatch, command
+):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    (tmp_path / "meeting.wav.json").write_text(_WHISPER_JSON, encoding="utf-8")
+    config = cli.cfg.Config(diarization_backend="sherpa", save_voice_profiles=False)
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: pytest.fail("profile setup must be skipped"),
+    )
+    monkeypatch.setattr(
+        cli.P,
+        "compute_speaker_embeddings",
+        lambda *_a: pytest.fail("embedding extraction must be skipped"),
+    )
+    monkeypatch.setattr(
+        cli.D,
+        "run_diarization",
+        lambda *_a, **_k: [DiarSegment(start=0.0, end=3.0, speaker=0)],
+    )
+
+    if command == "transcribe":
+        _prepare_diarization_build(monkeypatch)
+        monkeypatch.setattr(cli, "_run_whisper_streaming", lambda _cmd: SimpleNamespace(returncode=0))
+        args = _transcribe_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_transcribe(args) == 0
+    else:
+        _stub_setup_ready(monkeypatch)
+        args = _merge_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_merge(args) == 0
+
+
+@pytest.mark.parametrize("command", ["transcribe", "merge"])
+def test_profiles_match_existing_profiles_when_saving_is_disabled(
+    tmp_path, monkeypatch, command
+):
+    audio = tmp_path / "meeting.wav"
+    _write_pcm_wav(audio)
+    (tmp_path / "meeting.wav.json").write_text(_WHISPER_JSON, encoding="utf-8")
+    config = cli.cfg.Config(diarization_backend="sherpa", save_voice_profiles=False)
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0], samples=1)
+    profile_path = cli.P.profiles_dir() / "Alice.json"
+    before = profile_path.read_bytes()
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cli,
+        "_ensure_voice_profiles_ready",
+        lambda *_a, **_k: calls.append("setup"),
+    )
+    monkeypatch.setattr(
+        cli.P,
+        "compute_speaker_embeddings",
+        lambda *_a: calls.append("embeddings") or {0: [1.0]},
+    )
+    monkeypatch.setattr(
+        cli.D,
+        "run_diarization",
+        lambda *_a, **_k: [DiarSegment(start=0.0, end=3.0, speaker=0)],
+    )
+
+    if command == "transcribe":
+        _prepare_diarization_build(monkeypatch)
+        monkeypatch.setattr(cli, "_run_whisper_streaming", lambda _cmd: SimpleNamespace(returncode=0))
+        args = _transcribe_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_transcribe(args) == 0
+    else:
+        _stub_setup_ready(monkeypatch)
+        args = _merge_args(audio, outputs="srt", speakers=1)
+        args.no_voice_profiles = False
+        assert cli.cmd_merge(args) == 0
+
+    assert "setup" in calls
+    assert "embeddings" in calls
+    assert "Alice:" in (tmp_path / "meeting.speakers.srt").read_text(encoding="utf-8")
+    assert profile_path.read_bytes() == before
+
+
 def test_merge_html_fallback_when_diarization_unavailable_returns_error(tmp_path, monkeypatch, capsys):
     """wiz merge --speakers --outputs html with sherpa-onnx missing still
     writes a generic-label HTML transcript, then exits 1 because the
@@ -1015,6 +1237,7 @@ def test_transcribe_stage_timing_excludes_naming_wait_but_total_includes_analysi
     audio = _setup_transcribe(monkeypatch, tmp_path, diarize_enabled=True)
     monkeypatch.setattr(cli.cfg, "load", lambda: cli.cfg.Config(diarization_backend="sherpa", save_voice_profiles=False))
     monkeypatch.setattr(cli.P, "profiles_dir", lambda: tmp_path / "profiles")
+    cli.P.save_profile("Alice", [1.0, 0.0], samples=1)
     now = [0.0]
     monkeypatch.setattr(time, "perf_counter", lambda: now[0])
 

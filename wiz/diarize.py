@@ -353,7 +353,7 @@ def run_diarization(
     is a temporary normalized inference file.  It defaults to ``wav`` to
     retain the established behavior for direct WAV callers.
     """
-    backend = getattr(config, "diarization_backend", "sherpa")
+    backend = config.diarization_backend
     if backend not in cfg.DIARIZATION_BACKENDS:
         raise DiarizationUnavailable(
             f"Invalid diarization_backend={backend!r}. Choose: {', '.join(sorted(cfg.DIARIZATION_BACKENDS))}"

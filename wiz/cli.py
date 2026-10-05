@@ -180,6 +180,26 @@ def _ensure_voice_profiles_ready(config: cfg.Config, *, setup_allowed: bool) -> 
         D.download_embedding_model()
 
 
+def _voice_profiles_enabled(args: argparse.Namespace, config: cfg.Config) -> bool:
+    """Use embeddings only when profiles can be matched or saved."""
+    return not getattr(args, "no_voice_profiles", False) and (
+        config.save_voice_profiles or any(P.profiles_dir().glob("*.json"))
+    )
+
+
+def _prepare_voice_profiles(args: argparse.Namespace, config: cfg.Config) -> None:
+    """Ask voice-profile setup questions before the long pipeline work."""
+    if not _voice_profiles_enabled(args, config):
+        return
+    try:
+        _ensure_voice_profiles_ready(
+            config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
+        )
+    except Exception:  # noqa: BLE001
+        # The profile stage checks readiness without setup and reports skipped matching.
+        pass
+
+
 def _outputs_include(args: argparse.Namespace, config: cfg.Config, fmt: str) -> bool:
     """True if ``fmt`` is in the requested/configured outputs (comma-split)."""
     raw = args.outputs if args.outputs else ",".join(config.outputs)
@@ -636,11 +656,14 @@ def _build_transcribe_args(
     # of being skipped. Only when the setup fails (or --no-auto-diarization-setup)
     # does the quiet skip-with-hint below remain, mirroring the VAD model's
     # auto-download; VAD stays on and screenshots still run either way.
-    if (speakers_auto or args.speakers is not None) and not _ensure_diarization_ready(
+    diarization_ready = diarize_enabled and _ensure_diarization_ready(
         config,
         dry_run=getattr(args, "dry_run", False),
         setup_allowed=not getattr(args, "no_auto_diarization_setup", False),
-    ) and speakers_auto and args.speakers is None:
+    )
+    if diarization_ready and not getattr(args, "dry_run", False):
+        _prepare_voice_profiles(args, config)
+    if diarize_enabled and not diarization_ready and speakers_auto and args.speakers is None:
         ui.status("Speakers: diarization not available (setup incomplete); skipping speaker labels for this run.",
                   kind="hint",
                   detail="Run manually: " + _diarization_setup_hint(config))
@@ -1536,10 +1559,10 @@ def _cmd_transcribe_prepared(
             # (used as defaults); --speakers-names/--name-speakers can override.
             profile_names: dict[str, str] = {}
             cluster_embeddings: dict[int, list[float]] = {}
-            if not args.no_voice_profiles:
+            if _voice_profiles_enabled(args, config):
                 try:
                     with timings.measure("Speaker profiles"):
-                        _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
+                        _ensure_voice_profiles_ready(config, setup_allowed=False)
                         cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                         if cluster_embeddings:
                             profile_names, matches = P.auto_assign_names(
@@ -1549,7 +1572,7 @@ def _cmd_transcribe_prepared(
                 except Exception as e:  # noqa: BLE001
                     ui.status(f"Warning: voice-profile matching skipped: {e}", kind="warn")
             else:
-                timings.skip("Speaker profiles", "disabled")
+                timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no stored profiles; saving disabled")
             # Frames must be extracted before writing HTML so they can be
             # inlined; for the diarized path we extract after the labeled
             # outputs but before HTML if both are requested.
@@ -2242,6 +2265,8 @@ def _cmd_merge_prepared(
         raise SystemExit(f"Failed to parse {json_path}: {e}")
     if not whisper_segs:
         raise SystemExit(f"No segments parsed from {json_path}.")
+    if speakers_requested and setup_ready:
+        _prepare_voice_profiles(args, config)
     ui.kv("Segs", f"{len(whisper_segs)} whisper segments")
     timings.skip("Transcription", "reused JSON")
 
@@ -2411,10 +2436,10 @@ def _cmd_merge_prepared(
     # / --name-speakers can override. Embeddings are reused for profile saving.
     profile_names: dict[str, str] = {}
     cluster_embeddings: dict[int, list[float]] = {}
-    if merged and not args.no_voice_profiles:
+    if merged and _voice_profiles_enabled(args, config):
         try:
             with timings.measure("Speaker profiles"):
-                _ensure_voice_profiles_ready(config, setup_allowed=not getattr(args, "no_auto_diarization_setup", False))
+                _ensure_voice_profiles_ready(config, setup_allowed=False)
                 cluster_embeddings = P.compute_speaker_embeddings(wav, diar_segments, config)
                 if cluster_embeddings:
                     profile_names, _matches = P.auto_assign_names(
@@ -2423,8 +2448,8 @@ def _cmd_merge_prepared(
                     profile_names = {k: v for k, v in profile_names.items() if v}
         except Exception as e:  # noqa: BLE001
             ui.status(f"Warning: voice-profile matching skipped: {e}", kind="warn")
-    elif args.no_voice_profiles:
-        timings.skip("Speaker profiles", "disabled")
+    elif merged or args.no_voice_profiles:
+        timings.skip("Speaker profiles", "disabled" if args.no_voice_profiles else "no stored profiles; saving disabled")
 
     written: list[str] = []
     kept_outputs: list[Path] = []
