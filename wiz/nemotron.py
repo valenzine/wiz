@@ -68,8 +68,12 @@ def find_model(config: cfg.Config) -> Path | None:
         raise DiarizationUnavailable(
             f"Configured nemotron_model is not a file: {path}"
         )
-    path = _default_model_path()
-    return path if path.is_file() else None
+    candidates = [_default_model_path()]
+    candidates.extend(d / MODEL_NAME for d in cfg.model_search_dirs(config))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _sha256(path: Path) -> str:
@@ -100,20 +104,14 @@ def download_model(dest_dir: Path | None = None) -> Path:
     if target.is_file() and target.stat().st_size == MODEL_SIZE and _sha256(target) == MODEL_SHA256:
         return target
 
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{MODEL_NAME}.", suffix=".download", dir=target.parent)
-    os.close(fd)
-    temporary = Path(tmp_name)
-    try:
-        # Keep the shared downloader as the single HTTP implementation.
-        from wiz.diarize import _download
-
-        _download(MODEL_URL, temporary)
-        if temporary.stat().st_size != MODEL_SIZE or _sha256(temporary) != MODEL_SHA256:
+    def verify(downloaded: Path) -> None:
+        if downloaded.stat().st_size != MODEL_SIZE or _sha256(downloaded) != MODEL_SHA256:
             raise RuntimeError("Downloaded Nemotron model failed size or SHA256 verification.")
-        temporary.replace(target)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+
+    # Keep the shared downloader as the single HTTP implementation.
+    from wiz.diarize import _download_atomic
+
+    _download_atomic(MODEL_URL, target, verify=verify)
     return target
 
 
@@ -230,6 +228,8 @@ def parse_rttm(path: Path) -> list[DiarSegment]:
     segments: list[DiarSegment] = []
     for line_no, line in enumerate(lines, 1):
         parts = line.split()
+        if not parts:
+            continue
         # NeMo writes the recording basename verbatim. It can contain spaces,
         # so parse the fixed RTTM suffix from the right instead of assuming a
         # single token recording ID.
@@ -314,20 +314,28 @@ def run(
     ui.muted(f"  preset: {PRESET}")
     with tempfile.TemporaryDirectory(prefix="wiz-nemotron-") as temporary_dir:
         rttm = Path(temporary_dir) / "result.rttm"
-        completed = subprocess.run(
-            command_prefix + ["--output", str(rttm)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                command_prefix + ["--output", str(rttm)],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=False,
+            )
+        except OSError as exc:
+            raise DiarizationUnavailable(f"Could not execute nemo-speech at {runtime}: {exc}") from exc
         if completed.returncode != 0:
             details = (completed.stderr or completed.stdout).strip()
             raise RuntimeError(f"nemo-speech diarization failed (exit {completed.returncode}): {details}")
         segments = parse_rttm(rttm)
-    saved_cache = _write_cache(source, identity, segments)
     ui.muted(
         f"Nemotron found {len(segments)} segments across "
         f"{len({segment.speaker for segment in segments})} speaker clusters."
     )
-    ui.muted(f"Saved Nemotron diarization cache: {saved_cache}")
+    try:
+        saved_cache = _write_cache(source, identity, segments)
+    except OSError as exc:
+        ui.status(f"Warning: could not save Nemotron diarization cache: {exc}", kind="warn")
+    else:
+        ui.muted(f"Saved Nemotron diarization cache: {saved_cache}")
     return segments

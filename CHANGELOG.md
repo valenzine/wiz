@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format is based on 
 
 - Native runtime/model/device configuration, verified model downloads and a separate diarization cache that records the input, model, runtime libraries, device and preset. Document NeMo-Speech.cpp installation and podcast transcription.
 
+### Fixed
+
+- Preserve completed Nemotron diarization when its cache cannot be saved. Report runtime launch failures without decoding errors, accept blank lines in otherwise valid RTTM files, and discover native models in configured search directories.
+- Reuse atomic downloads with model verification. Show runtime setup guidance only when needed, distinguish successful downloads from invalid runtime settings, and display the correct source cache path after audio normalization.
+
 ## [0.19.0] - 2026-10-04
 
 ### Changed

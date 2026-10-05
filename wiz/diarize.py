@@ -147,6 +147,26 @@ def _download(url: str, target: Path) -> None:
             shutil.copyfileobj(resp, fh, length=1024 * 1024)
 
 
+def _download_atomic(url: str, target: Path, verify=None) -> None:
+    """Download to a sibling temporary file, then replace ``target``.
+
+    ``verify`` receives the temporary path and raises to reject the download.
+    """
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".download", dir=target.parent,
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        _download(url, temporary)
+        if verify is not None:
+            verify(temporary)
+        temporary.replace(target)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def download_embedding_model(dest_dir: Path | None = None) -> Path:
     """Download only the voice-embedding model used by profile extraction."""
     base = dest_dir or _default_diarization_dir()
@@ -154,17 +174,7 @@ def download_embedding_model(dest_dir: Path | None = None) -> Path:
     target = base / EMB_MODEL_FILE
     if target.is_file():
         return target
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{target.name}.", suffix=".download", dir=target.parent,
-    )
-    os.close(fd)
-    temporary = Path(temporary_name)
-    try:
-        _download(EMB_URL, temporary)
-        temporary.replace(target)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+    _download_atomic(EMB_URL, target)
     return target
 
 

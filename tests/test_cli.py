@@ -2520,12 +2520,20 @@ def test_merge_declined_setup_then_success_explains_cache_reuse(tmp_path, monkey
         ],
     )
 
+    cache_details = []
+    original_status = cli.ui.status
+    def capture_status(message, **kwargs):
+        if "ran WITHOUT the one-time setup" in message:
+            cache_details.append(kwargs.get("detail"))
+        return original_status(message, **kwargs)
+    monkeypatch.setattr(cli.ui, "status", capture_status)
+
     rc = cli.cmd_merge(_merge_args(audio, outputs="html", speakers=1))
 
     assert rc == 0
     flat = " ".join(capsys.readouterr().err.split())
     assert "ran WITHOUT the one-time setup" in flat
-    assert ".diar.json" in flat
+    assert cache_details == [str(cli.D.diar_cache_path(audio))]
 
 
 def test_manifest_is_named_detection(tmp_path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import hashlib
 import json
 import os
 import wave
@@ -257,3 +258,97 @@ def test_native_process_failure_is_loud(tmp_path, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="exit 3.*metal unavailable"):
         D.run_diarization(wav, _config(), use_cache=False)
+
+
+def test_native_returns_segments_when_cache_write_fails(tmp_path, monkeypatch):
+    wav = tmp_path / "episode.wav"
+    _wav(wav)
+    _ready(tmp_path, monkeypatch)
+    monkeypatch.setattr(N.subprocess, "run", _rttm_process([]))
+
+    def fail_cache_write(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(N, "_write_cache", fail_cache_write)
+
+    assert D.run_diarization(wav, _config(), use_cache=False) == [
+        D.DiarSegment(start=0.0, end=1.0, speaker=1),
+        D.DiarSegment(start=1.5, end=2.0, speaker=0),
+    ]
+
+
+def test_native_execution_oserror_is_diarization_unavailable(tmp_path, monkeypatch):
+    wav = tmp_path / "episode.wav"
+    _wav(wav)
+    _ready(tmp_path, monkeypatch)
+
+    def fail_exec(*_args, **_kwargs):
+        raise OSError("executable format error")
+
+    monkeypatch.setattr(N.subprocess, "run", fail_exec)
+
+    with pytest.raises(
+        D.DiarizationUnavailable,
+        match="Could not execute nemo-speech.*executable format error",
+    ):
+        D.run_diarization(wav, _config(), use_cache=False)
+
+
+def test_native_invalid_utf8_process_output_is_reported_as_failure(tmp_path):
+    wav = tmp_path / "episode.wav"
+    _wav(wav)
+    runtime = tmp_path / "nemo-speech"
+    runtime.write_text("#!/bin/sh\nprintf '\\377' >&2\nexit 23\n", encoding="utf-8")
+    runtime.chmod(0o755)
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"model")
+
+    with pytest.raises(RuntimeError, match="exit 23"):
+        N.run(
+            wav,
+            _config(nemo_speech_cli=str(runtime), nemotron_model=str(model)),
+            use_cache=False,
+        )
+
+
+def test_native_finds_model_in_configured_model_dirs(tmp_path, monkeypatch):
+    custom_models = tmp_path / "custom-models"
+    custom_models.mkdir()
+    model = custom_models / N.MODEL_NAME
+    model.write_bytes(b"model")
+    monkeypatch.setattr(
+        N, "_default_model_path", lambda: tmp_path / "missing" / N.MODEL_NAME
+    )
+
+    assert N.find_model(_config(model_dirs=[str(custom_models)])) == model
+
+
+def test_native_ignores_blank_padded_rttm_rows(tmp_path):
+    path = tmp_path / "result.rttm"
+    path.write_text(
+        " \t \n"
+        "SPEAKER recording 1 0.0 1.0 <NA> <NA> host <NA> <NA>\n"
+        "\t\n",
+        encoding="utf-8",
+    )
+
+    assert N.parse_rttm(path) == [D.DiarSegment(start=0.0, end=1.0, speaker=0)]
+
+
+def test_native_model_download_preserves_existing_model_after_failed_verification(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / N.MODEL_NAME
+    target.write_bytes(b"known-good")
+    expected = b"expected-model"
+    monkeypatch.setattr(N, "MODEL_SIZE", len(expected))
+    monkeypatch.setattr(N, "MODEL_SHA256", hashlib.sha256(expected).hexdigest())
+    monkeypatch.setattr(
+        D, "_download", lambda _url, temporary: temporary.write_bytes(b"truncated")
+    )
+
+    with pytest.raises(RuntimeError, match="size or SHA256"):
+        N.download_model(tmp_path)
+
+    assert target.read_bytes() == b"known-good"
+    assert list(tmp_path.glob(f".{N.MODEL_NAME}.*.download")) == []

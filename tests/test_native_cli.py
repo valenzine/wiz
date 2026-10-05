@@ -163,3 +163,45 @@ def test_native_voice_setup_downloads_embedding_without_pyannote(monkeypatch):
     monkeypatch.setattr(cli.D, "download_embedding_model", lambda: downloads.append("embedding"))
     cli._ensure_voice_profiles_ready(cfg.Config(), setup_allowed=True)
     assert downloads == ["embedding"]
+
+
+@pytest.mark.parametrize("runtime_state", ["installed", "missing", "invalid_override"])
+def test_native_model_download_reports_completed_downloads(tmp_path, monkeypatch, capsys, runtime_state):
+    config = _native_config()
+    if runtime_state == "invalid_override":
+        config.nemo_speech_cli = str(tmp_path / "missing-runtime")
+    else:
+        monkeypatch.setattr(cli.N, "find_runtime", lambda _config: tmp_path / "runtime" if runtime_state == "installed" else None)
+    monkeypatch.setattr(cli.cfg, "load", lambda: config)
+    native_model = tmp_path / cli.N.MODEL_NAME
+    embedding_model = tmp_path / cli.D.EMB_MODEL_FILE
+    monkeypatch.setattr(cli.N, "download_model", lambda dest_dir: native_model.write_bytes(b"native model"))
+    monkeypatch.setattr(cli.D, "download_embedding_model", lambda dest_dir: embedding_model.write_bytes(b"embedding model"))
+
+    rc = cli.cmd_models_download_diarization(SimpleNamespace(dest=str(tmp_path), diarization_backend=None))
+
+    output = capsys.readouterr()
+    assert native_model.read_bytes() == b"native model"
+    assert embedding_model.read_bytes() == b"embedding model"
+    assert rc == 0
+    assert "Done." in output.out
+    assert "Download failed" not in output.err
+    assert "download-diarization" not in output.err
+    if runtime_state == "missing":
+        assert "Install NeMo-Speech.cpp" in output.err
+    elif runtime_state == "invalid_override":
+        assert "Configured nemo_speech_cli" in output.err
+        assert "missing-runtime" in output.err
+    else:
+        assert "runtime missing" not in output.err
+
+
+def test_native_model_download_failure_remains_nonzero(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli.cfg, "load", lambda: _native_config())
+    def fail_download(dest_dir):
+        raise RuntimeError("model checksum mismatch")
+    monkeypatch.setattr(cli.N, "download_model", fail_download)
+    monkeypatch.setattr(cli.D, "download_embedding_model", lambda **_kwargs: pytest.fail("download continued after failure"))
+
+    assert cli.cmd_models_download_diarization(SimpleNamespace(dest=str(tmp_path), diarization_backend=None)) == 2
+    assert "model checksum mismatch" in capsys.readouterr().err

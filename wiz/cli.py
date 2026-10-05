@@ -1825,7 +1825,19 @@ def cmd_models_download_diarization(args: argparse.Namespace) -> int:
         if config.diarization_backend == "nemotron":
             N.download_model(dest_dir=dest)
             D.download_embedding_model(dest_dir=dest)
-            ui.info(_diarization_setup_hint(config))
+            try:
+                runtime = N.find_runtime(config)
+            except D.DiarizationUnavailable as exc:
+                ui.status(
+                    "Models downloaded; Nemotron runtime unavailable.", kind="hint",
+                    detail=f"{exc} Set nemo_speech_cli to a valid executable before transcribing.",
+                )
+            else:
+                if runtime is None:
+                    ui.status(
+                        "Nemotron runtime missing.", kind="hint",
+                        detail="Install NeMo-Speech.cpp: https://github.com/NVIDIA/NeMo-Speech.cpp/blob/main/docs/install.md",
+                    )
         else:
             D.download_diarization_models(dest_dir=dest)
         print("\nDone. Enable with: wiz transcribe --speakers <file>")
@@ -2265,7 +2277,10 @@ def _cmd_merge_prepared(
     # Diarization params.
     num_sp = args.speakers if args.speakers else 0
     thr = _diarization_threshold(args, config)
-    ui.muted(f"Diarize: num_speakers={num_sp or 'auto'} cluster_threshold={thr}")
+    if config.diarization_backend == "nemotron":
+        ui.muted(f"Diarize: Nemotron preset={N.PRESET} (automatic speaker count)")
+    else:
+        ui.muted(f"Diarize: num_speakers={num_sp or 'auto'} cluster_threshold={thr}")
 
     want_html = _outputs_include(args, config, "html")
     # Degraded outputs honor only an EXPLICIT --outputs html (a typed flag
@@ -2378,7 +2393,9 @@ def _cmd_merge_prepared(
             "Speakers: diarization ran WITHOUT the one-time setup — a cached "
             "diarization result was reused for this WAV.",
             kind="info",
-            detail=str(N.cache_path(in_path) if config.diarization_backend == "nemotron" else D.diar_cache_path(wav)),
+            detail=str(D.diar_cache_path(
+                _diarization_cache_kwargs(wav, in_path).get("cache_source", wav),
+            )),
         )
 
     merged = MR.assign_speakers(whisper_segs, diar_segments) if diar_segments else []
