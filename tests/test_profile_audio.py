@@ -145,6 +145,41 @@ def test_profile_embedding_stream_reader_preserves_stereo_downmix(tmp_path, monk
     assert result == {0: pytest.approx([4800.0, 0.0])}
 
 
+def test_profile_embedding_uses_available_audio_when_wav_is_truncated(tmp_path, monkeypatch):
+    wav = tmp_path / "truncated.wav"
+    _write_pcm_wav(wav, array("h", [0]) * 16_000)
+    data = wav.read_bytes()
+    wav.write_bytes(data[: len(data) - 8_000 * 2])  # Header still claims 1 s.
+    _fake_embedding_runtime(monkeypatch, tmp_path)
+
+    result = P.compute_speaker_embeddings(
+        wav,
+        [D.DiarSegment(0.0, 1.0, 0), D.DiarSegment(0.6, 1.0, 1)],
+        cfg.Config(),
+    )
+
+    assert result == {0: [8000.0, 0.0]}
+
+
+@pytest.mark.parametrize("channels", [1, 2, 3])
+def test_wav_reader_keeps_complete_frames_in_truncated_pcm(tmp_path, channels):
+    frames = [
+        [32767, -32768, 12345][:channels],
+        [-32768, 32767, -23456][:channels],
+        [1200, 3400, -5600][:channels],
+    ]
+    samples = array("h", [sample for frame in frames for sample in frame])
+    samples.extend([11] * channels)
+    wav = tmp_path / "partial-frame.wav"
+    _write_pcm_wav(wav, samples, channels=channels)
+    wav.write_bytes(wav.read_bytes()[:-1])  # Last frame is incomplete.
+
+    audio, sample_rate = D._read_wav_pcm(wav)
+
+    assert sample_rate == 16_000
+    assert audio == [sum(frame) / channels / 32768.0 for frame in frames]
+
+
 def test_profile_embedding_closes_wav_when_extractor_fails(tmp_path, monkeypatch):
     wav = tmp_path / "episode.wav"
     _write_pcm_wav(wav, array("h", [0]) * 4_800)
