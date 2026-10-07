@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.21.0] - 2026-10-06
+
+### Changed
+
+- Read voice-profile audio in bounded blocks to reduce memory use on long recordings. Preserve the existing audio samples, chunk boundaries and embedding averages used for speaker recognition.
+
 ## [0.20.0] - 2026-10-04
 
 ### Changed
