@@ -531,30 +531,38 @@ def _progress_callback(num_processed: int, num_total: int) -> int:
     return 0
 
 
+def _pcm16_to_mono(raw: bytes, n_channels: int) -> list[float]:
+    """Decode little-endian 16-bit PCM frames into mono floats in [-1, 1).
+
+    Multi-channel frames are averaged. A trailing partial frame (a short read
+    from a truncated file) is dropped rather than raising.
+    """
+    from array import array
+
+    ints = array("h")
+    ints.frombytes(raw[: len(raw) - len(raw) % (2 * n_channels)])
+    if sys.byteorder == "big":
+        ints.byteswap()
+    if n_channels > 1:
+        channels = [ints[c::n_channels] for c in range(n_channels)]
+        return [sum(frame) / n_channels / 32768.0 for frame in zip(*channels)]
+    return [s / 32768.0 for s in ints]
+
+
 def _read_wav_pcm(path: Path) -> tuple[list[float], int]:
     """Read a 16kHz mono PCM WAV into a float32 sample list.
 
     Uses the wave stdlib to avoid a numpy/soundfile dependency.
     """
-    import struct
     import wave
 
     with wave.open(str(path), "rb") as wf:
         n_channels = wf.getnchannels()
         sample_width = wf.getsampwidth()
         sample_rate = wf.getframerate()
-        n_frames = wf.getnframes()
-        raw = wf.readframes(n_frames)
+        raw = wf.readframes(wf.getnframes())
 
     if sample_width != 2:
         raise RuntimeError(f"Expected 16-bit PCM WAV, got sample_width={sample_width}")
 
-    n = n_frames * n_channels
-    ints = struct.unpack(f"<{n}h", raw)
-    if n_channels > 1:
-        mono: list[float] = []
-        for i in range(0, n, n_channels):
-            chunk = ints[i : i + n_channels]
-            mono.append(sum(chunk) / n_channels / 32768.0)
-        return mono, sample_rate
-    return [s / 32768.0 for s in ints], sample_rate
+    return _pcm16_to_mono(raw, n_channels), sample_rate

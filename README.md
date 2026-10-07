@@ -8,7 +8,7 @@
 
 From audio or video to a labeled, named, frame-illustrated transcript — in one command, on your own machine.
 
-[![Version](https://img.shields.io/badge/version-0.20.0-F0A32E)](https://github.com/valenzine/wiz/releases)
+[![Version](https://img.shields.io/badge/version-0.21.0-F0A32E)](https://github.com/valenzine/wiz/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4ECBD9)](LICENSE)
 [![Python ≥3.11](https://img.shields.io/badge/python-%E2%89%A53.11-4ECBD9)](https://www.python.org/)
 [![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)

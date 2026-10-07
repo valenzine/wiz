@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -73,9 +74,14 @@ def test_voice_profile_embeddings_pass_execution_settings(
 ):
     seen = {}
     model = tmp_path / "embedding.onnx"
+    wav = tmp_path / "episode.wav"
     model.write_bytes(b"model")
+    with wave.open(str(wav), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(16_000)
+        out.writeframes(b"\0\0" * 16_000)
     monkeypatch.setattr(P, "find_embedding_model", lambda _config: model)
-    monkeypatch.setattr(P, "_read_wav_pcm", lambda _wav: ([0.0] * 16000, 16000))
 
     class FakeStream:
         def accept_waveform(self, _sample_rate, _samples):
@@ -110,7 +116,7 @@ def test_voice_profile_embeddings_pass_execution_settings(
 
     config = cfg.Config(diarization_provider=provider, diarization_threads=threads)
     result = P.compute_speaker_embeddings(
-        tmp_path / "episode.wav", [D.DiarSegment(0, 1, 0)], config,
+        wav, [D.DiarSegment(0, 1, 0)], config,
     )
     assert result == {0: [0.5, 0.5]}
     assert seen["config"][1]["provider"] == provider

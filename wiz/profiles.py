@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import math
 import sys
+import wave
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,7 +41,7 @@ from wiz.diarize import (
     DiarSegment,
     DiarizationProviderError,
     _import_sherpa,
-    _read_wav_pcm,
+    _pcm16_to_mono,
     find_embedding_model,
 )
 
@@ -221,14 +222,14 @@ def compute_speaker_embeddings(
 ) -> dict[int, list[float]]:
     """Compute one averaged embedding per speaker cluster.
 
-    For each speaker id present in ``segments``, the audio for that speaker's
-    segments is concatenated and fed to the sherpa-onnx
-    ``SpeakerEmbeddingExtractor``. The extractor is a streaming model, so the
-    audio is split into chunks (~30 s) that fit its context. When a speaker
-    has multiple segments, their embeddings are averaged into a single vector.
+    For each speaker id present in ``segments``, every diarization segment is
+    independently fed to the sherpa-onnx ``SpeakerEmbeddingExtractor``. The
+    extractor is a streaming model, so each segment is read in bounded chunks
+    (~30 s) that fit its context. When a speaker has multiple chunks, their
+    embeddings are averaged into a single vector.
 
-    Returns ``{speaker_id: embedding}``. Speakers whose total audio is too
-    short to produce an embedding are omitted.
+    Returns ``{speaker_id: embedding}``. Speakers with no segment long enough
+    (0.3 s) to produce an embedding are omitted.
     """
     if not segments:
         return {}
@@ -272,44 +273,57 @@ def compute_speaker_embeddings(
     dim = extractor.dim
     sample_rate = 16000  # wiz extracts 16 kHz mono WAV
 
-    samples, sr = _read_wav_pcm(wav)
-    if sr != sample_rate:
-        raise RuntimeError(f"Expected {sample_rate} Hz audio, got {sr} Hz.")
+    with wave.open(str(wav), "rb") as wf:
+        n_channels = wf.getnchannels()
+        sample_width = wf.getsampwidth()
+        sr = wf.getframerate()
+        n_frames = wf.getnframes()
+        if sample_width != 2:
+            raise RuntimeError(f"Expected 16-bit PCM WAV, got sample_width={sample_width}")
+        if sr != sample_rate:
+            raise RuntimeError(f"Expected {sample_rate} Hz audio, got {sr} Hz.")
 
-    # Group sample ranges by speaker.
-    by_speaker: dict[int, list[tuple[int, int]]] = {}
-    for s in segments:
-        if s.speaker not in by_speaker:
-            by_speaker[s.speaker] = []
-        start_i = max(0, int(s.start * sample_rate))
-        end_i = min(len(samples), int(s.end * sample_rate))
-        if end_i > start_i:
-            by_speaker[s.speaker].append((start_i, end_i))
+        # Group frame ranges by speaker in the original segment order. Reading
+        # each range directly avoids retaining the whole recording or a copied
+        # segment while preserving overlapping ranges as separate embeddings.
+        by_speaker: dict[int, list[tuple[int, int]]] = {}
+        for s in segments:
+            if s.speaker not in by_speaker:
+                by_speaker[s.speaker] = []
+            start_i = max(0, int(s.start * sample_rate))
+            end_i = min(n_frames, int(s.end * sample_rate))
+            if end_i > start_i:
+                by_speaker[s.speaker].append((start_i, end_i))
 
-    out: dict[int, list[float]] = {}
-    # Feed audio in chunks so the streaming extractor's context isn't exceeded.
-    chunk = sample_rate * 30  # 30 s
-    for spk, ranges in by_speaker.items():
-        vecs: list[list[float]] = []
-        for start_i, end_i in ranges:
-            seg_samples = samples[start_i:end_i]
-            # Skip very short utterances (< 0.3 s) — not enough for an embedding.
-            if len(seg_samples) < int(sample_rate * 0.3):
-                continue
-            off = 0
-            while off < len(seg_samples):
-                block = seg_samples[off : off + chunk]
-                if len(block) < int(sample_rate * 0.3):
-                    break
-                stream = extractor.create_stream()
-                stream.accept_waveform(sample_rate, block)
-                stream.input_finished()
-                if extractor.is_ready(stream):
-                    vecs.append(list(extractor.compute(stream)))
-                off += chunk
-        if vecs:
-            out[spk] = _average_vectors(vecs, dim)
-    return out
+        out: dict[int, list[float]] = {}
+        # Feed audio in chunks so the streaming extractor's context isn't exceeded.
+        chunk = sample_rate * 30  # 30 s
+        min_frames = int(sample_rate * 0.3)
+        for spk, ranges in by_speaker.items():
+            vecs: list[list[float]] = []
+            for start_i, end_i in ranges:
+                remaining = end_i - start_i
+                # Skip very short utterances (< 0.3 s) — not enough for an embedding.
+                if remaining < min_frames:
+                    continue
+                wf.setpos(start_i)
+                while remaining:
+                    block_frames = min(remaining, chunk)
+                    if block_frames < min_frames:
+                        break
+                    block = _pcm16_to_mono(wf.readframes(block_frames), n_channels)
+                    # A short read means the file ends before its header says.
+                    if len(block) < min_frames:
+                        break
+                    stream = extractor.create_stream()
+                    stream.accept_waveform(sample_rate, block)
+                    stream.input_finished()
+                    if extractor.is_ready(stream):
+                        vecs.append(list(extractor.compute(stream)))
+                    remaining -= block_frames
+            if vecs:
+                out[spk] = _average_vectors(vecs, dim)
+        return out
 
 
 def _average_vectors(vecs: list[list[float]], dim: int) -> list[float]:
