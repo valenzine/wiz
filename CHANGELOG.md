@@ -6,7 +6,11 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Changed
 
-- Read voice-profile audio in bounded blocks to reduce memory use on long recordings. Preserve the existing audio samples, chunk boundaries and embedding averages used for speaker recognition.
+- Reduce audio-buffer memory during voice-profile extraction by reading bounded blocks. Preserve the existing audio samples, chunk boundaries and embedding averages used for speaker recognition.
+
+### Fixed
+
+- Decode available complete PCM frames from truncated WAV files during speaker matching and sherpa diarization; omit incomplete trailing frames.
 
 ## [0.20.0] - 2026-10-04
 
