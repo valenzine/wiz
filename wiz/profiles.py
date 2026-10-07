@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import math
-import struct
 import sys
 import wave
 from dataclasses import dataclass
@@ -42,6 +41,7 @@ from wiz.diarize import (
     DiarSegment,
     DiarizationProviderError,
     _import_sherpa,
+    _pcm16_to_mono,
     find_embedding_model,
 )
 
@@ -228,8 +228,8 @@ def compute_speaker_embeddings(
     (~30 s) that fit its context. When a speaker has multiple chunks, their
     embeddings are averaged into a single vector.
 
-    Returns ``{speaker_id: embedding}``. Speakers whose total audio is too
-    short to produce an embedding are omitted.
+    Returns ``{speaker_id: embedding}``. Speakers with no segment long enough
+    (0.3 s) to produce an embedding are omitted.
     """
     if not segments:
         return {}
@@ -311,15 +311,10 @@ def compute_speaker_embeddings(
                     block_frames = min(remaining, chunk)
                     if block_frames < min_frames:
                         break
-                    raw = wf.readframes(block_frames)
-                    ints = struct.unpack(f"<{block_frames * n_channels}h", raw)
-                    if n_channels > 1:
-                        block = [
-                            sum(ints[i : i + n_channels]) / n_channels / 32768.0
-                            for i in range(0, len(ints), n_channels)
-                        ]
-                    else:
-                        block = [s / 32768.0 for s in ints]
+                    block = _pcm16_to_mono(wf.readframes(block_frames), n_channels)
+                    # A short read means the file ends before its header says.
+                    if len(block) < min_frames:
+                        break
                     stream = extractor.create_stream()
                     stream.accept_waveform(sample_rate, block)
                     stream.input_finished()
